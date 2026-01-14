@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f14" />
+  <title>Ki nevet a végén – Web (2–4 játékos)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <span>Ki nevet a végén</span>
+      <span class="sub">2–4 játékos • helyi hotseat</span>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn ghost" id="btnRules" type="button">Szabályok</button>
+      <button class="btn ghost" id="btnNew" type="button">Új játék</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="board-card" aria-label="Játéktábla">
+      <div class="board-shell">
+        <div id="board" class="board" role="application" aria-label="Ki nevet a végén tábla"></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Vezérlőpanel">
+      <div class="panel-top">
+        <div class="turnline">
+          <div class="pill" id="turnPill">
+            <span class="pill-dot" id="turnDot" aria-hidden="true"></span>
+            <span class="pill-text" id="turnName">—</span>
+          </div>
+          <div class="mini" id="turnMeta">—</div>
+        </div>
+
+        <div class="dicebox" aria-label="Kocka">
+          <div class="diceface" id="diceFace">—</div>
+          <div class="dicelabel" id="diceLabel">Dobásra vár</div>
+        </div>
+      </div>
+
+      <div class="panel-actions">
+        <button class="btn primary" id="btnRoll" type="button">Dobás</button>
+        <button class="btn" id="btnSkip" type="button">Passz</button>
+      </div>
+
+      <div class="hint" id="hint">Válassz játékot fent, aztán mehet a dobás.</div>
+
+      <div class="score" id="score"></div>
+
+      <div class="logwrap">
+        <div class="logtitle">Napló</div>
+        <div class="log" id="log" aria-live="polite"></div>
+      </div>
+
+      <footer class="footer">
+        <span>Tipp: ha csak 1 lépésed van, magától meglépi.</span>
+      </footer>
+    </section>
+  </main>
+
+  <!-- Setup modal -->
+  <div class="modal" id="setupModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="setupTitle">Játék indítása</div>
+        <button class="btn ghost icon" id="btnCloseSetup" type="button" aria-label="Bezárás">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="field">
+          <label for="playerCount">Játékosok száma</label>
+          <select id="playerCount">
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4" selected>4</option>
+          </select>
+          <div class="help">2-nél: Zöld + Piros (szemben), 3-nál: Zöld + Sárga + Piros.</div>
+        </div>
+
+        <div class="names" id="nameFields"></div>
+
+        <div class="toggles">
+          <label class="check">
+            <input type="checkbox" id="optExtraTurnOnSix" checked />
+            <span>6-osnál még egy dobás</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="optAutoMove" checked />
+            <span>Autó-lépés, ha csak 1 opció van</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn primary" id="btnStart" type="button">Indítás</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rules modal -->
+  <div class="modal" id="rulesModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="rulesTitle">Alap szabályok (web verzió)</div>
+        <button class="btn ghost icon" id="btnCloseRules" type="button" aria-label="Bezárás">✕</button>
+      </div>
+
+      <div class="modal-body prose">
+        <ul>
+          <li>2–4 játékos, körönként egymás után.</li>
+          <li>6-ost kell dobni a bábu kihozásához a start mezőre.</li>
+          <li>A körben dobsz, aztán ráböksz egy <b>kiemelt</b> bábra.</li>
+          <li>Ha olyan mezőre érkezel, ahol <b>1</b> ellenfél áll, akkor visszaküldöd haza (kivéve a start mezők – azok védettek).</li>
+          <li>Ha egy mezőn <b>2</b> azonos színű bábu áll, az blokkol: oda nem lehet érkezni.</li>
+          <li>A cél: mind a 4 bábut bevinni a saját „hazafutó” soron a középig.</li>
+        </ul>
+        <p class="muted">
+          Ez egy „működjön, kész” verzió GitHub Pages-re. Ha később online (külön telókról) multira akarod,
+          megcsináljuk szobakóddal + realtime sync-kel (Firebase/Supabase/WebRTC jelzővel).
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Win modal -->
+  <div class="modal" id="winModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="winTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="winTitle">Vége</div>
+        <button class="btn ghost icon" id="btnCloseWin" type="button" aria-label="Bezárás">✕</button>
+      </div>
+      <div class="modal-body prose">
+        <p id="winText">—</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" id="btnRestart" type="button">Új kör</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
