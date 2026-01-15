@@ -13,7 +13,7 @@
   // =======================
   // 1) SUPABASE CONFIG
   // =======================
-  const SUPABASE_URL = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
