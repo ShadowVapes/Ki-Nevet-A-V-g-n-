@@ -1,31 +1,196 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="hu">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-  <title>Ki nevet a végén – Online</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#1b1f2a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Ki nevet a végén – Online (2–4)</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-
-<div id="game">
-  <div id="board-wrapper">
-    <div id="board"></div>
-  </div>
-
-  <div id="ui">
-    <div id="current-player">
-      <span id="player-indicator"></span>
-      <span id="player-name">Várakozás…</span>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎲</span>
+      <div class="brandtxt">
+        <div class="t">Ki nevet a végén</div>
+        <div class="s">online szobás • 2–4 játékos • teló/gép</div>
+      </div>
     </div>
 
-    <div id="dice-area">
-      <div id="dice" onclick="rollDice()">1</div>
+    <div class="top-actions">
+      <button class="btn ghost" id="btnRules" type="button">Szabályok</button>
+      <button class="btn ghost" id="btnLeave" type="button" disabled>Kilépés</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="board-card" aria-label="Játéktábla">
+      <div class="board-shell">
+        <div id="board" class="board" role="application" aria-label="Ki nevet a végén tábla"></div>
+      </div>
+      <div class="board-help" id="boardHelp">
+        Dobáshoz katt a kockára (csak ha te jössz).
+      </div>
+      <div class="underbar" id="underbar">
+        <div class="turnpill" id="underTurn">
+          <span class="dot" id="underDot"></span>
+          <span class="txt" id="underName">—</span>
+        </div>
+        <button class="dicebtn" id="uiDice" type="button" aria-label="Kocka">
+          <span id="uiDiceFace">—</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Vezérlőpanel">
+      <div class="status">
+        <div class="pill">
+          <span class="pill-dot" id="turnDot" aria-hidden="true"></span>
+          <span class="pill-text" id="turnName">—</span>
+        </div>
+        <div class="mini" id="turnMeta">—</div>
+
+        <div class="netrow">
+          <span class="tag">Realtime</span>
+          <span class="pill2" id="netState">init</span>
+        </div>
+      </div>
+
+      <div class="panel-actions">
+        <button class="btn primary" id="btnStartMain" type="button" hidden disabled>Start</button>
+        <button class="btn" id="btnRoll" type="button" disabled>Dobás (backup)</button>
+        <button class="btn" id="btnSkip" type="button" disabled>Passz</button>
+      </div>
+
+      <div class="hint" id="hint">Csatlakozz egy szobához vagy csinálj újat.</div>
+
+      <div class="roombar" id="roomBar" hidden>
+        <div class="roompill">
+          <span class="tag">Szoba</span>
+          <span class="code" id="roomCodeText">—</span>
+        </div>
+        <button class="btn ghost" id="btnCopy" type="button">Kód másolás</button>
+      </div>
+
+      <div class="score" id="score"></div>
+
+      <div class="logwrap">
+        <div class="logtitle">Napló</div>
+        <div class="log" id="log" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Lobby modal -->
+  <div class="modal show" id="lobbyModal" aria-hidden="false">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="lobbyTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="lobbyTitle">Online szoba</div>
+        <div class="modal-right">
+          <span class="pill2" id="netState2">init</span>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <div class="grid2">
+          <div class="field">
+            <label for="yourName">Neved</label>
+            <input id="yourName" type="text" placeholder="pl. Tesó" maxlength="18" />
+          </div>
+
+          <div class="field">
+            <label for="roomCode">Szobakód</label>
+            <input id="roomCode" type="text" placeholder="pl. K8F2QZ" maxlength="10" />
+            <div class="help">Ha van kód: Join. Ha nincs: Create (hagyd üresen).</div>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="playerCount">Játékosok száma</label>
+            <select id="playerCount">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+            </select>
+            <div class="help">Create-nél számít. Startolni már 2 főtől lehet.</div>
+          </div>
+
+          <div class="field">
+            <label>Opciók</label>
+            <label class="check"><input type="checkbox" id="optExtraTurnOnSix" checked /> <span>6-osnál még egy dobás</span></label>
+            <label class="check"><input type="checkbox" id="optAutoMove" checked /> <span>Auto-lépés (ha 1 opció)</span></label>
+          </div>
+        </div>
+
+        <div class="lobbyState" id="lobbyState" hidden>
+          <div class="row">
+            <div class="roompill big">
+              <span class="tag">Kód</span>
+              <span class="code" id="roomCodeBig">—</span>
+            </div>
+            <button class="btn ghost" id="btnCopyBig" type="button">Másol</button>
+          </div>
+
+          <div class="players" id="playersList"></div>
+          <div class="help">Host indít: Start (min. 2 fő). A kocka is működik.</div>
+        </div>
+      </div>
+
+      <div class="modal-actions split">
+        <button class="btn" id="btnJoin" type="button">Join</button>
+        <button class="btn primary" id="btnCreate" type="button">Create</button>
+        <button class="btn primary" id="btnStart" type="button" hidden>Start</button>
+      </div>
+
+      <div class="modal-footnote">
+        <span class="muted2">Supabase (Realtime + DB) • GitHub Pages frontend</span>
+      </div>
     </div>
   </div>
-</div>
 
-<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-<script src="app.js"></script>
+  <!-- Rules modal -->
+  <div class="modal" id="rulesModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="rulesTitle">Szabályok</div>
+        <button class="btn ghost icon" id="btnCloseRules" type="button" aria-label="Bezárás">✕</button>
+      </div>
+      <div class="modal-body prose">
+        <ul>
+          <li>2–4 játékos. Join ugyanazzal a kóddal.</li>
+          <li>Dobás: kockára katt, vagy “Dobás” gomb (backup).</li>
+          <li>6-os kell a bábu kihozásához.</li>
+          <li>Dobás után megmutatja, hova érkezne a bábu (céljelölők).</li>
+          <li>Ütés: ha nem védett mezőn áll az ellenfél, haza megy.</li>
+          <li>Védett: csak a saját start meződ (a többiek startja nem védett neked).</li>
+          <li>Hazafelé: előbb elmegy a bejáratig, utána megy be a színes sorba (nem vág le).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Win modal -->
+  <div class="modal" id="winModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="winTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="winTitle">Vége</div>
+        <button class="btn ghost icon" id="btnCloseWin" type="button" aria-label="Bezárás">✕</button>
+      </div>
+      <div class="modal-body prose">
+        <p id="winText">—</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" id="btnBackLobby" type="button">Vissza a lobbyba</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Supabase -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
 </body>
 </html>
