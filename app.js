@@ -1,17 +1,8 @@
-/* Ki nevet a végén (Ludo) – ONLINE szobás multiplayer + anim
-   Frontend: GitHub Pages
-   Realtime/state: Supabase
-
-   FONTOS:
-   - SUPABASE_URL = Data API / Project URL
-   - SUPABASE_ANON_KEY = Publishable key (sb_publishable_...)
-   - Secret key-t SOHA ne tedd ide.
-*/
 (() => {
   "use strict";
 
   // =======================
-  // 1) SUPABASE CONFIG
+  // SUPABASE CONFIG
   // =======================
   const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
@@ -23,29 +14,12 @@
   const $ = (sel) => document.querySelector(sel);
 
   // =======================
-  // 2) HELPERS
+  // HELPERS
   // =======================
-  function cellKey(x, y) { return `${x},${y}`; }
-  function delay(ms){ return new Promise(res => setTimeout(res, ms)); }
-  function nowIso(){ return new Date().toISOString(); }
-  function deepClone(o){ return JSON.parse(JSON.stringify(o)); }
-
-  function escapeHtml(s) {
-    return (s ?? "").replace(/[&<>"']/g, (m) => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;",
-    }[m]));
-  }
-
-  function getCSS(varName) {
-    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-  }
-  function withAlpha(hex, a) {
-    const h = (hex || "#ffffff").replace("#", "");
-    const r = parseInt(h.slice(0,2), 16);
-    const g = parseInt(h.slice(2,4), 16);
-    const b = parseInt(h.slice(4,6), 16);
-    return `rgba(${r},${g},${b},${a})`;
-  }
+  const delay = (ms) => new Promise(res => setTimeout(res, ms));
+  const nowIso = () => new Date().toISOString();
+  const deepClone = (o) => JSON.parse(JSON.stringify(o));
+  const cellKey = (x,y) => `${x},${y}`;
 
   function normalizeCode(s){
     return (s||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10);
@@ -65,9 +39,22 @@
       return (Math.floor(Math.random()*6)+1);
     }
   }
+  function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+  function withAlpha(hex, a){
+    const h = (hex || "#ffffff").replace("#","");
+    const r = parseInt(h.slice(0,2),16);
+    const g = parseInt(h.slice(2,4),16);
+    const b = parseInt(h.slice(4,6),16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+  function escapeHtml(s){
+    return (s ?? "").replace(/[&<>"']/g, (m) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;",
+    }[m]));
+  }
 
   // =======================
-  // 3) BOARD PATH (15x15)
+  // BOARD PATH (15x15)
   // =======================
   const PATH = [
     [6,0],[6,1],[6,2],[6,3],[6,4],[6,5],
@@ -83,7 +70,7 @@
     [8,5],[8,4],[8,3],[8,2],[8,1],[8,0],
     [7,0],
   ];
-  const PATH_SET = new Set(PATH.map(p => cellKey(p[0], p[1])));
+  const PATH_SET = new Set(PATH.map(p => cellKey(p[0],p[1])));
 
   const COLORS = [
     { id:"green",  label:"Zöld",  hex:getCSS("--green"),  startCoord:[1,6],
@@ -111,11 +98,27 @@
   const START_INDEX = Object.fromEntries(
     COLORS.map(c => [c.id, PATH.findIndex(p => p[0]===c.startCoord[0] && p[1]===c.startCoord[1])])
   );
+
+  // Entry = a start előtti mező a tracken (innen lépsz be a homeStretch[0]-ra)
   const HOME_ENTRY_INDEX = Object.fromEntries(
     Object.keys(START_INDEX).map(id => [id, (START_INDEX[id] + PATH.length - 1) % PATH.length])
   );
 
-  const SAFE_CELLS = new Set(Object.values(START_INDEX).map(i => cellKey(PATH[i][0], PATH[i][1])));
+  // Safe: start mezők (mindenkinek safe)
+  const SAFE_START_CELLS = new Set(Object.values(START_INDEX).map(i => cellKey(PATH[i][0], PATH[i][1])));
+
+  // Saját színű védett track szegmens (játékos kérésére): start után 5 mező
+  const COLORED_TRACK = new Map(); // colorId -> Set(trackIndex)
+  for (const c of COLORS){
+    const si = START_INDEX[c.id];
+    const set = new Set();
+    for (let k=0;k<6;k++) set.add((si + k) % PATH.length); // start + 5
+    COLORED_TRACK.set(c.id, set);
+  }
+  const isProtectedTrackForColor = (colorId, trackIndex) => {
+    const s = COLORED_TRACK.get(colorId);
+    return !!s && s.has(trackIndex);
+  };
 
   const HOME_STRETCH_MAP = (() => {
     const m = new Map();
@@ -123,9 +126,8 @@
     return m;
   })();
 
-  function colorOf(colorId){
-    return COLORS.find(c => c.id === colorId)?.hex || "#fff";
-  }
+  function colorHex(colorId){ return COLORS.find(c => c.id === colorId)?.hex || "#fff"; }
+
   function startOwnerByCell(k){
     for (const c of COLORS){
       const si = START_INDEX[c.id];
@@ -136,23 +138,27 @@
   }
 
   // =======================
-  // 4) DOM
+  // DOM
   // =======================
   const elBoard = $("#board");
-  const elDiceFace = $("#diceFace");
-  const elDiceLabel = $("#diceLabel");
+  const elBoardHelp = $("#boardHelp");
+
   const elBtnStartMain = $("#btnStartMain");
   const elBtnRoll = $("#btnRoll");
   const elBtnSkip = $("#btnSkip");
+
   const elHint = $("#hint");
   const elTurnName = $("#turnName");
   const elTurnDot = $("#turnDot");
   const elTurnMeta = $("#turnMeta");
+
   const elScore = $("#score");
   const elLog = $("#log");
 
-  const lobbyModal = $("#lobbyModal");
   const netState = $("#netState");
+  const netState2 = $("#netState2");
+
+  const lobbyModal = $("#lobbyModal");
   const yourName = $("#yourName");
   const roomCodeInp = $("#roomCode");
   const playerCountSel = $("#playerCount");
@@ -182,7 +188,7 @@
   const winText = $("#winText");
 
   // =======================
-  // 5) ROOM / STATE
+  // ROOM / STATE
   // =======================
   let ui = { extraTurnOnSix:true, autoMove:true };
 
@@ -201,41 +207,37 @@
   let animLock = false;
   let pendingSnap = null;
 
-  // polling fallback (PC fix)
+  // polling fallback
   let pollTimer = null;
 
-  function startPolling(){
-    if (pollTimer) return;
-    pollTimer = setInterval(async () => {
-      if (!room.code) return;
-      if (animLock) return;
-      try{
-        const rr = await fetchRoom(room.code);
-        if (rr && rr.version > version) onRemoteSnapshot(rr.state, rr.version);
-      }catch{}
-    }, 1200);
-  }
-  function stopPolling(){
-    if (pollTimer){
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
-
-  // Board SVG
+  // SVG
   let svg = null;
   let gPieces = null;
+  let gTargets = null;
+  let diceG = null;
+  let diceRect = null;
+  let diceFaceText = null;
+  let dicePlayerText = null;
+  let diceHintText = null;
   const pawnEls = new Map();
 
   // =======================
-  // 6) NETWORK (Supabase)
+  // NETWORK
   // =======================
   async function requireSupabase(){
     if (!sb){
       setHint("Supabase nincs beállítva (URL + Publishable key).");
-      netState.textContent = "no-supabase";
-      netState.style.color = "var(--red)";
+      setNet("no-supabase", "var(--red)");
       throw new Error("Supabase not configured");
+    }
+  }
+
+  function setNet(txt, color){
+    netState.textContent = txt;
+    netState2.textContent = txt;
+    if (color){
+      netState.style.color = color;
+      netState2.style.color = color;
     }
   }
 
@@ -269,11 +271,7 @@
 
     ch.on("postgres_changes",
       { event:"UPDATE", schema:"public", table:"rooms", filter:`code=eq.${code}` },
-      (payload) => {
-        const ns = payload.new.state;
-        const nv = payload.new.version;
-        onRemoteSnapshot(ns, nv);
-      }
+      (payload) => onRemoteSnapshot(payload.new.state, payload.new.version)
     );
 
     ch.on("broadcast", { event:"move" }, (payload) => {
@@ -281,9 +279,13 @@
       if (p) onRemoteMove(p);
     });
 
+    ch.on("broadcast", { event:"roll" }, (payload) => {
+      const p = payload?.payload;
+      if (p) onRemoteRoll(p);
+    });
+
     await ch.subscribe((status) => {
-      netState.textContent = status;
-      netState.style.color = status === "SUBSCRIBED" ? "var(--green)" : "var(--muted)";
+      setNet(status, status === "SUBSCRIBED" ? "var(--green)" : "var(--muted)");
     });
 
     room.channel = ch;
@@ -292,6 +294,25 @@
   async function broadcast(event, payload){
     if (!room.channel) return;
     await room.channel.send({ type:"broadcast", event, payload });
+  }
+
+  function startPolling(){
+    if (pollTimer) return;
+    pollTimer = setInterval(async () => {
+      if (!room.code) return;
+      if (animLock) return;
+      try{
+        const rr = await fetchRoom(room.code);
+        if (rr && rr.version > version) onRemoteSnapshot(rr.state, rr.version);
+      }catch{}
+    }, 1100);
+  }
+
+  function stopPolling(){
+    if (pollTimer){
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
   }
 
   function onRemoteSnapshot(newState, newVer){
@@ -322,27 +343,31 @@
     const toV = payload.toVersion;
     if (toV !== undefined && toV <= version) return;
 
-    const anim = payload.anim;
-    const snap = payload.state;
-
-    if (!anim || !snap){
-      if (snap && toV !== undefined) applySnapshot(snap, toV);
-      return;
+    if (payload.anim){
+      animLock = true;
+      try{
+        await animateMove(payload.anim);
+      } finally {
+        animLock = false;
+      }
     }
 
-    animLock = true;
-    try{
-      await animateMove(anim);
-    } finally {
-      animLock = false;
-    }
-
-    if (toV !== undefined) applySnapshot(snap, toV);
+    // state snapshot
+    if (payload.state && toV !== undefined) applySnapshot(payload.state, toV);
 
     if (pendingSnap){
-      const ps = pendingSnap;
-      pendingSnap = null;
+      const ps = pendingSnap; pendingSnap = null;
       applySnapshot(ps.state, ps.version);
+    }
+  }
+
+  async function onRemoteRoll(payload){
+    // csak vizuális anim + hint, a state úgyis jön snapshotból is
+    if (payload?.die){
+      diceRollAnim(payload.die);
+    }
+    if (payload?.byName && payload?.die){
+      toast(`${payload.byName} dobott: ${payload.die}`);
     }
   }
 
@@ -351,35 +376,41 @@
       const upd = await updateRoomState(newState, version);
       applySnapshot(upd.state, upd.version);
 
-      if (extras?.anim){
+      if (extras?.moveAnim){
         await broadcast("move", {
           toVersion: upd.version,
-          anim: extras.anim,
+          anim: extras.moveAnim,
           state: upd.state
         });
       }
+      if (extras?.rollAnim){
+        await broadcast("roll", {
+          toVersion: upd.version,
+          die: extras.rollAnim.die,
+          byName: extras.rollAnim.byName,
+          colorId: extras.rollAnim.colorId
+        });
+      }
     } catch (e){
-      // conflict -> refresh
       try{
         const rr = await fetchRoom(room.code);
         if (rr) applySnapshot(rr.state, rr.version);
       } catch {}
-      logLine("Ütközés: valaki közben lépett / frissült. Próbáld újra.", true);
+      toast("Ütközés / desync: frissítettem a szobát.");
     }
   }
 
   // =======================
-  // 7) GAME LOGIC
+  // GAME LOGIC
   // =======================
   function selectColors(count){
-    if (count === 2) return [COLORS[0], COLORS[2]];            // green + red
-    if (count === 3) return [COLORS[0], COLORS[1], COLORS[2]]; // green + yellow + red
+    if (count === 2) return [COLORS[0], COLORS[2]];             // zöld + piros
+    if (count === 3) return [COLORS[0], COLORS[1], COLORS[2]];  // zöld + sárga + piros
     return COLORS.slice(0,4);
   }
 
   function makeInitialState(hostId, count, settings){
     const chosen = selectColors(count);
-
     const players = [];
     const pieces = [];
 
@@ -412,14 +443,13 @@
       movablePieceIds: [],
       sixStreak: 0,
       winnerId: null,
+      lastRoll: null, // FIX: mindig megmarad, hogy mások is lássák
       log: [`${new Date().toLocaleString()} – Szoba létrehozva.`],
       updatedAt: nowIso()
     };
   }
 
-  function currentPlayer(s){
-    return s.players[s.turnIdx] || null;
-  }
+  function currentPlayer(s){ return s.players[s.turnIdx] || null; }
 
   function getTrackOccupancy(s){
     const map = new Map();
@@ -441,6 +471,7 @@
     const bucket = occ.get(key);
     if (!bucket) return true;
 
+    // 2 azonos bábu blokkol
     for (const [pid, cnt] of bucket.countByPlayer.entries()){
       if (pid !== colorId && cnt >= 2) return false;
     }
@@ -453,6 +484,7 @@
 
     if (piece.state === "finished") return null;
 
+    // home -> start csak 6-ra
     if (piece.state === "home"){
       if (die !== 6) return null;
       const ti = START_INDEX[colorId];
@@ -460,22 +492,26 @@
       return { state:"track", trackIndex:ti, stretchIndex:null };
     }
 
+    // track mozgás
     if (piece.state === "track"){
       const cur = piece.trackIndex;
       const entry = HOME_ENTRY_INDEX[colorId];
       const distToEntry = (entry - cur + PATH.length) % PATH.length;
 
+      // ha még nem éred el az entry-t, sima track
       if (die <= distToEntry){
         const ni = (cur + die) % PATH.length;
         if (!isTrackLandingAllowed(s, colorId, PATH[ni])) return null;
         return { state:"track", trackIndex:ni, stretchIndex:null };
       }
 
-      const into = die - distToEntry - 1;
+      // különben entry-ig elmész, majd 1 lépés = homeStretch[0]
+      const into = die - distToEntry - 1; // FIX: így biztos entry után lép be
       if (into < 0 || into > 5) return null;
       return { state:"homeStretch", trackIndex:null, stretchIndex:into };
     }
 
+    // homeStretch
     if (piece.state === "homeStretch"){
       const ni = piece.stretchIndex + die;
       if (ni > 6) return null;
@@ -496,110 +532,6 @@
       if (computeLegalMove(s, piece, die)) out.push(piece.id);
     }
     return out;
-  }
-
-  function applyMoveToState(prev, pieceId, mv){
-    const s = deepClone(prev);
-    const piece = s.pieces.find(p => p.id === pieceId);
-    if (!piece) return s;
-
-    const actor = currentPlayer(s);
-
-    piece.state = mv.state;
-    piece.trackIndex = mv.trackIndex ?? null;
-    piece.stretchIndex = mv.stretchIndex ?? null;
-
-    // capture
-    if (piece.state === "track"){
-      const coord = PATH[piece.trackIndex];
-      const key = cellKey(coord[0], coord[1]);
-      const safe = SAFE_CELLS.has(key);
-
-      if (!safe){
-        const victims = s.pieces.filter(pp =>
-          pp.id !== piece.id &&
-          pp.state === "track" &&
-          pp.trackIndex === piece.trackIndex &&
-          pp.playerId !== piece.playerId
-        );
-        if (victims.length){
-          for (const v of victims){
-            v.state = "home";
-            v.trackIndex = null;
-            v.stretchIndex = null;
-          }
-          s.log.unshift(`${actor.name} ütött: ${victims.length} bábu haza.`);
-        }
-      }
-    }
-
-    // finish
-    if (piece.state === "finished"){
-      actor.finished = (actor.finished || 0) + 1;
-      s.log.unshift(`${actor.name} beért! (${actor.finished}/4)`);
-    }
-
-    if (s.log.length > 80) s.log.length = 80;
-    return s;
-  }
-
-  function nextTurnInState(prev, extra){
-    const s = deepClone(prev);
-    if (!extra){
-      s.turnIdx = (s.turnIdx + 1) % s.players.length;
-      s.sixStreak = 0;
-    }
-    s.phase = "needRoll";
-    s.die = null;
-    s.movablePieceIds = [];
-    s.updatedAt = nowIso();
-    return s;
-  }
-
-  // =======================
-  // 8) PERMISSIONS
-  // =======================
-  function isMyTurn(){
-    if (!state || state.status !== "playing") return false;
-    const cp = currentPlayer(state);
-    return !!cp && cp.id === room.meId;
-  }
-  function canRoll(){
-    return state && state.status === "playing" && state.phase === "needRoll" && isMyTurn();
-  }
-  function canPick(pieceId){
-    return state && state.status === "playing" && state.phase === "needPick" && isMyTurn() && (state.movablePieceIds||[]).includes(pieceId);
-  }
-
-  // =======================
-  // 9) ACTIONS
-  // =======================
-  async function actRoll(){
-    if (!canRoll()) return;
-
-    const die = rollDie();
-    const s = deepClone(state);
-    s.die = die;
-    s.phase = "needPick";
-    s.updatedAt = nowIso();
-    s.log.unshift(`${currentPlayer(s).name} dobott: ${die}.`);
-    s.movablePieceIds = updateMovablePieceIds(s);
-
-    if (s.movablePieceIds.length === 0){
-      s.log.unshift(`${currentPlayer(s).name}: nincs lépés.`);
-      const s2 = nextTurnInState(s, false);
-      await pushState(s2, null);
-      return;
-    }
-
-    await pushState(s, null);
-
-    if (s.settings.autoMove && s.movablePieceIds.length === 1){
-      await delay(240);
-      if (state && state.phase === "needPick" && isMyTurn() && state.movablePieceIds.length === 1){
-        await actPick(state.movablePieceIds[0]);
-      }
-    }
   }
 
   function pieceToPos(s, piece){
@@ -623,12 +555,179 @@
     return { x:7.5, y:7.5 };
   }
 
-  function buildAnim(prev, piece, mv){
+  function applyMoveToState(prev, pieceId, mv){
+    const s = deepClone(prev);
+    const piece = s.pieces.find(p => p.id === pieceId);
+    if (!piece) return s;
+
+    const actor = currentPlayer(s);
+
+    piece.state = mv.state;
+    piece.trackIndex = mv.trackIndex ?? null;
+    piece.stretchIndex = mv.stretchIndex ?? null;
+
+    // CAPTURE (csak track-en)
+    if (piece.state === "track"){
+      const coord = PATH[piece.trackIndex];
+      const key = cellKey(coord[0], coord[1]);
+
+      // safe start mezők (mindenkinek safe)
+      const safeStart = SAFE_START_CELLS.has(key);
+
+      if (!safeStart){
+        const victims = s.pieces.filter(pp =>
+          pp.id !== piece.id &&
+          pp.state === "track" &&
+          pp.trackIndex === piece.trackIndex &&
+          pp.playerId !== piece.playerId
+        );
+
+        if (victims.length){
+          // FIX: saját színű mezőn álló bábu nem üthető
+          const survivors = [];
+          const knocked = [];
+
+          for (const v of victims){
+            const protectedByOwnColor = isProtectedTrackForColor(v.playerId, v.trackIndex);
+            if (protectedByOwnColor){
+              survivors.push(v);
+            }else{
+              knocked.push(v);
+            }
+          }
+
+          for (const v of knocked){
+            v.state = "home";
+            v.trackIndex = null;
+            v.stretchIndex = null;
+          }
+
+          if (knocked.length){
+            s.log.unshift(`${actor.name} ütött: ${knocked.length} bábu haza.`);
+          } else if (survivors.length){
+            s.log.unshift(`${actor.name} próbált ütni, de védett mező (saját szín).`);
+          }
+        }
+      }
+    }
+
+    // finish
+    if (piece.state === "finished"){
+      const pl = s.players.find(p => p.id === actor.id);
+      pl.finished = (pl.finished || 0) + 1;
+      s.log.unshift(`${actor.name} beért! (${pl.finished}/4)`);
+    }
+
+    if (s.log.length > 80) s.log.length = 80;
+    return s;
+  }
+
+  function nextTurnInState(prev, extra){
+    const s = deepClone(prev);
+    if (!extra){
+      s.turnIdx = (s.turnIdx + 1) % s.players.length;
+      s.sixStreak = 0;
+    }
+    s.phase = "needRoll";
+    s.die = null;
+    s.movablePieceIds = [];
+    s.updatedAt = nowIso();
+    return s;
+  }
+
+  // =======================
+  // PERMISSIONS
+  // =======================
+  function isMyTurn(){
+    if (!state || state.status !== "playing") return false;
+    const cp = currentPlayer(state);
+    return !!cp && cp.id === room.meId;
+  }
+  function canRoll(){
+    return state && state.status === "playing" && state.phase === "needRoll" && isMyTurn();
+  }
+  function canPick(pieceId){
+    return state && state.status === "playing" && state.phase === "needPick" && isMyTurn() && (state.movablePieceIds||[]).includes(pieceId);
+  }
+
+  // =======================
+  // VISUAL: dice anim + toast
+  // =======================
+  function toast(msg){
+    setHint(msg);
+    const div = document.createElement("div");
+    div.className = "item";
+    div.textContent = msg;
+    elLog.prepend(div);
+    while (elLog.children.length > 45) elLog.removeChild(elLog.lastChild);
+  }
+
+  function setDiceFace(n){
+    if (!diceFaceText) return;
+    diceFaceText.textContent = String(n ?? "—");
+  }
+
+  async function diceRollAnim(finalDie){
+    if (!diceG) return;
+
+    diceG.classList.add("diceRolling");
+    const spins = 10;
+    for (let i=0;i<spins;i++){
+      setDiceFace((i % 6) + 1);
+      await delay(32);
+    }
+    setDiceFace(finalDie);
+    await delay(80);
+    diceG.classList.remove("diceRolling");
+  }
+
+  // =======================
+  // ACTIONS
+  // =======================
+  async function actRoll(){
+    if (!canRoll()) return;
+
+    const die = rollDie();
+
+    // local vizu anim azonnal
+    diceRollAnim(die);
+
+    const s = deepClone(state);
+    const cp = currentPlayer(s);
+
+    s.die = die;
+    s.phase = "needPick";
+    s.updatedAt = nowIso();
+
+    // FIX: lastRoll megmarad
+    s.lastRoll = { byId: cp.id, byName: cp.name, colorId: cp.colorId, die, at: Date.now() };
+
+    s.log.unshift(`${cp.name} dobott: ${die}.`);
+    s.movablePieceIds = updateMovablePieceIds(s);
+
+    if (s.movablePieceIds.length === 0){
+      s.log.unshift(`${cp.name}: nincs lépés.`);
+      const s2 = nextTurnInState(s, false);
+      await pushState(s2, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId } });
+      return;
+    }
+
+    await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId } });
+
+    // auto-move
+    if (s.settings.autoMove && s.movablePieceIds.length === 1){
+      await delay(260);
+      if (state && state.phase === "needPick" && isMyTurn() && state.movablePieceIds.length === 1){
+        await actPick(state.movablePieceIds[0]);
+      }
+    }
+  }
+
+  function buildMoveAnim(prev, piece, mv){
     const steps = [];
     const captures = [];
 
     const cxy = (coord) => ({ x: coord[0] + 0.5, y: coord[1] + 0.5 });
-
     steps.push(pieceToPos(prev, piece));
 
     const colorId = piece.playerId;
@@ -649,7 +748,8 @@
           steps.push(cxy(PATH[idx]));
         }
       } else if (mv.state === "homeStretch"){
-        for (let i=1;i<=distToEntry+1;i++){
+        // FIX: előbb entry-ig megy (distToEntry lépés), aztán homeStretch[0..]
+        for (let i=1;i<=distToEntry;i++){
           const idx = (cur + i) % PATH.length;
           steps.push(cxy(PATH[idx]));
         }
@@ -675,14 +775,19 @@
       const landing = mv.trackIndex;
       const coord = PATH[landing];
       const key = cellKey(coord[0], coord[1]);
-      if (!SAFE_CELLS.has(key)){
+
+      if (!SAFE_START_CELLS.has(key)){
         const victims = prev.pieces.filter(pp =>
           pp.id !== piece.id &&
           pp.state === "track" &&
           pp.trackIndex === landing &&
           pp.playerId !== piece.playerId
         );
-        for (const v of victims) captures.push(v.id);
+        for (const v of victims){
+          if (!isProtectedTrackForColor(v.playerId, v.trackIndex)){
+            captures.push(v.id);
+          }
+        }
       }
     }
 
@@ -698,18 +803,19 @@
     const mv = computeLegalMove(state, piece, state.die);
     if (!mv) return;
 
-    const anim = buildAnim(state, piece, mv);
+    const anim = buildMoveAnim(state, piece, mv);
     let s2 = applyMoveToState(state, pieceId, mv);
 
     // win?
     const cpAfter = currentPlayer(s2);
-    if (cpAfter && (cpAfter.finished || 0) >= 4){
+    const plAfter = s2.players.find(p => p.id === cpAfter.id);
+    if (plAfter && (plAfter.finished || 0) >= 4){
       s2.status = "ended";
       s2.phase = "ended";
       s2.winnerId = cpAfter.id;
       s2.log.unshift(`${cpAfter.name} nyert!`);
       s2.updatedAt = nowIso();
-      await pushState(s2, { anim });
+      await pushState(s2, { moveAnim: anim });
       return;
     }
 
@@ -728,11 +834,11 @@
       s2 = nextTurnInState(s2, false);
     }
 
-    await pushState(s2, { anim });
+    await pushState(s2, { moveAnim: anim });
   }
 
   // =======================
-  // 10) LOBBY
+  // LOBBY
   // =======================
   function setHint(msg){ elHint.textContent = msg; }
   function meName(){
@@ -767,12 +873,9 @@
 
   function renderLobbyState(){
     if (!state || !room.code) return;
-
     playersList.innerHTML = "";
 
-    // itt csak azt mutatjuk, amit a szoba eredetileg beállított
     const chosen = selectColors(state.settings?.playerCount || 4).map(c => c.id);
-
     for (const cid of chosen){
       const pl = state.players.find(p => p.colorId === cid);
       const card = document.createElement("div");
@@ -783,7 +886,7 @@
 
       const dot = document.createElement("div");
       dot.className = "dot";
-      dot.style.background = colorOf(cid);
+      dot.style.background = colorHex(cid);
 
       const nm = document.createElement("div");
       nm.className = "nm";
@@ -836,7 +939,7 @@
     init.log.unshift(`${name} (host) belépett: ${COLORS.find(c=>c.id===myColor).label}.`);
 
     let inserted = null;
-    for (let i=0;i<4;i++){
+    for (let i=0;i<5;i++){
       try{
         inserted = await insertRoom(code, init);
         break;
@@ -920,7 +1023,6 @@
     setHint("Bent vagy. Várjátok a Startot (min. 2 fő).");
   }
 
-  // START FIX: minimum 2 főtől indul, és csak az aktív színek bábuival
   async function startGameFlow(){
     if (!state || state.status !== "lobby") return;
     if (room.meId !== state.hostId) return;
@@ -934,10 +1036,10 @@
     // aktív színek = akik ténylegesen bent vannak
     const activeColors = new Set(s2.players.map(p => p.colorId));
 
-    // dobjuk a nem használt színek bábuit (különben ott állnának feleslegesen)
+    // csak aktív színek bábui maradnak
     s2.pieces = s2.pieces.filter(pc => activeColors.has(pc.playerId));
 
-    // lockoljuk a playerCount-ot a tényleges induló létszámra
+    // lock a tényleges létszámra
     s2.settings.playerCount = s2.players.length;
 
     s2.status = "playing";
@@ -951,17 +1053,14 @@
 
     await pushState(s2, null);
     closeLobby();
-    setHint("Mehet. Dobj.");
+    setHint("Mehet. Katt a kockára.");
   }
 
   async function leaveRoomFlow(){
     if (!room.code) return;
 
     stopPolling();
-
-    try{
-      if (room.channel) await room.channel.unsubscribe();
-    }catch{}
+    try{ if (room.channel) await room.channel.unsubscribe(); }catch{}
 
     room = { code:null, hostId:null, meId:null, myColor:null, channel:null };
     state = null;
@@ -977,58 +1076,8 @@
   }
 
   // =======================
-  // 11) UI
+  // UI: turn + score + log
   // =======================
-  function setDice(face, label){
-    elDiceFace.textContent = face;
-    elDiceLabel.textContent = label;
-  }
-
-  function logLine(msg, muted=false){
-    const div = document.createElement("div");
-    div.className = "item";
-    div.textContent = msg;
-    if (!muted) div.style.color = "var(--text)";
-    elLog.prepend(div);
-    while (elLog.children.length > 40) elLog.removeChild(elLog.lastChild);
-  }
-
-  function refreshControls(){
-    const inRoom = !!room.code && !!state;
-    const isLobby = inRoom && state.status === "lobby";
-    const isPlaying = inRoom && state.status === "playing";
-    const isHost = isLobby && room.meId === state.hostId;
-
-    // Start gomb fő UI-n
-    if (elBtnStartMain){
-      elBtnStartMain.hidden = !isLobby;
-      elBtnStartMain.disabled = !(isHost && (state.players?.length || 0) >= 2);
-    }
-
-    // Start a modalban is
-    btnStart.hidden = !(isHost && isLobby);
-    btnStart.disabled = !(isHost && isLobby && (state?.players?.length || 0) >= 2);
-
-    elBtnRoll.disabled = !(isPlaying && canRoll());
-    elBtnSkip.disabled = !(isPlaying && isMyTurn());
-    btnLeave.disabled = !room.code;
-
-    if (!state){
-      setDice("—","—");
-      return;
-    }
-
-    if (state.status === "lobby"){
-      setDice("—", `Lobby • ${state.players.length} játékos • Host indít (min. 2)`);
-      return;
-    }
-
-    setDice(
-      state.die ? String(state.die) : "—",
-      state.phase === "needRoll" ? "Dobásra vár" : "Válassz bábut"
-    );
-  }
-
   function renderScore(){
     elScore.innerHTML = "";
     if (!state) return;
@@ -1043,7 +1092,7 @@
 
       const dot = document.createElement("div");
       dot.className = "c-dot";
-      dot.style.background = colorOf(p.colorId);
+      dot.style.background = colorHex(p.colorId);
 
       const nm = document.createElement("div");
       nm.className = "name";
@@ -1085,15 +1134,16 @@
 
     const cp = currentPlayer(state);
     elTurnName.textContent = cp ? cp.name : "—";
-    elTurnDot.style.background = cp ? colorOf(cp.colorId) : "rgba(255,255,255,.25)";
+    elTurnDot.style.background = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.25)";
     const my = (cp && cp.id === room.meId) ? " (te)" : "";
-    elTurnMeta.textContent = `Kör: ${state.turnIdx+1}/${state.players.length}${my}`;
+    const lr = state.lastRoll ? ` • Utolsó dobás: ${state.lastRoll.byName}=${state.lastRoll.die}` : "";
+    elTurnMeta.textContent = `Kör: ${state.turnIdx+1}/${state.players.length}${my}${lr}`;
   }
 
   function renderLogFromState(){
     elLog.innerHTML = "";
     if (!state) return;
-    (state.log || []).slice(0, 30).forEach(line => {
+    (state.log || []).slice(0, 32).forEach(line => {
       const div = document.createElement("div");
       div.className = "item";
       div.textContent = line;
@@ -1101,8 +1151,41 @@
     });
   }
 
+  function refreshControls(){
+    const inRoom = !!room.code && !!state;
+    const isLobby = inRoom && state.status === "lobby";
+    const isPlaying = inRoom && state.status === "playing";
+    const isHost = isLobby && room.meId === state.hostId;
+
+    elBtnStartMain.hidden = !isLobby;
+    elBtnStartMain.disabled = !(isHost && (state.players?.length || 0) >= 2);
+
+    btnStart.hidden = !(isHost && isLobby);
+    btnStart.disabled = !(isHost && isLobby && (state?.players?.length || 0) >= 2);
+
+    // roll backup gomb
+    elBtnRoll.disabled = !(isPlaying && canRoll());
+    elBtnSkip.disabled = !(isPlaying && isMyTurn());
+
+    btnLeave.disabled = !room.code;
+
+    // board help szöveg
+    if (!state || state.status !== "playing"){
+      elBoardHelp.textContent = "A játék a kockán keresztül megy. Lobbyban Startol a host.";
+    } else {
+      elBoardHelp.textContent = canRoll()
+        ? "Te jössz: katt a kockára dobáshoz."
+        : "Várj a körödre…";
+    }
+
+    // dice enabled/disabled vizuál
+    if (diceG){
+      diceG.classList.toggle("diceDisabled", !(isPlaying && (canRoll() || (isMyTurn() && state.phase === "needPick"))));
+    }
+  }
+
   // =======================
-  // 12) BOARD RENDER (SVG)
+  // BOARD RENDER (SVG + dice + targets)
   // =======================
   function buildBoardIfNeeded(){
     if (svg) return;
@@ -1112,6 +1195,7 @@
     svg.setAttribute("viewBox","0 0 15 15");
     svg.setAttribute("preserveAspectRatio","xMidYMid meet");
 
+    // cells
     for (let y=0;y<15;y++){
       for (let x=0;x<15;x++){
         const rect = document.createElementNS(svg.namespaceURI,"rect");
@@ -1119,27 +1203,30 @@
         rect.setAttribute("y",y);
         rect.setAttribute("width",1);
         rect.setAttribute("height",1);
+
         const info = getCellInfo(x,y);
         rect.setAttribute("fill", info.fill);
         rect.setAttribute("class", `cell ${info.cls}`);
         svg.appendChild(rect);
 
-        if (SAFE_CELLS.has(cellKey(x,y))){
+        // start dots
+        if (SAFE_START_CELLS.has(cellKey(x,y))){
           const dot = document.createElementNS(svg.namespaceURI,"circle");
           dot.setAttribute("cx", x+0.5);
           dot.setAttribute("cy", y+0.5);
-          dot.setAttribute("r", 0.08);
-          dot.setAttribute("fill", "rgba(255,255,255,.55)");
+          dot.setAttribute("r", 0.10);
+          dot.setAttribute("fill", "rgba(255,255,255,.70)");
           svg.appendChild(dot);
         }
       }
     }
 
+    // center decoration
     const tris = [
-      { pts: "6,6 7.5,7.5 6,9", fill: withAlpha(getCSS("--green"), 0.45) },
-      { pts: "6,6 7.5,7.5 9,6", fill: withAlpha(getCSS("--yellow"), 0.45) },
-      { pts: "9,9 7.5,7.5 9,6", fill: withAlpha(getCSS("--red"), 0.45) },
-      { pts: "6,9 7.5,7.5 9,9", fill: withAlpha(getCSS("--blue"), 0.45) },
+      { pts: "6,6 7.5,7.5 6,9", fill: withAlpha(getCSS("--green"), 0.30) },
+      { pts: "6,6 7.5,7.5 9,6", fill: withAlpha(getCSS("--yellow"), 0.30) },
+      { pts: "9,9 7.5,7.5 9,6", fill: withAlpha(getCSS("--red"), 0.30) },
+      { pts: "6,9 7.5,7.5 9,9", fill: withAlpha(getCSS("--blue"), 0.30) },
     ];
     for (const t of tris){
       const poly = document.createElementNS(svg.namespaceURI,"polygon");
@@ -1149,26 +1236,24 @@
       svg.appendChild(poly);
     }
 
-    const tx = document.createElementNS(svg.namespaceURI,"text");
-    tx.setAttribute("x","7.5");
-    tx.setAttribute("y","7.9");
-    tx.setAttribute("text-anchor","middle");
-    tx.setAttribute("font-size","0.65");
-    tx.setAttribute("font-weight","900");
-    tx.setAttribute("fill","rgba(255,255,255,.22)");
-    tx.textContent = "HOME";
-    svg.appendChild(tx);
+    // targets layer
+    gTargets = document.createElementNS(svg.namespaceURI,"g");
+    svg.appendChild(gTargets);
 
+    // pieces layer
     gPieces = document.createElementNS(svg.namespaceURI,"g");
     svg.appendChild(gPieces);
+
+    // center dice (on top)
+    buildCenterDice();
 
     elBoard.appendChild(svg);
   }
 
   function getCellInfo(x,y){
-    const bg = "#0b0f14";
-    const pathBg = "#121a22";
-    const centerBg = "#0f1620";
+    const bg = "#22283a";
+    const pathBg = "#2a334a";
+    const centerBg = "#273049";
 
     const inGreenHome = (x<=5 && y<=5);
     const inYellowHome = (x>=9 && y<=5);
@@ -1181,25 +1266,90 @@
     const hs = HOME_STRETCH_MAP.get(k);
 
     if (inCenter) return { fill:centerBg, cls:"center" };
-    if (inGreenHome) return { fill: withAlpha(getCSS("--green"), 0.08), cls:"" };
-    if (inYellowHome) return { fill: withAlpha(getCSS("--yellow"), 0.085), cls:"" };
-    if (inRedHome) return { fill: withAlpha(getCSS("--red"), 0.085), cls:"" };
-    if (inBlueHome) return { fill: withAlpha(getCSS("--blue"), 0.085), cls:"" };
+    if (inGreenHome) return { fill: withAlpha(getCSS("--green"), 0.16), cls:"" };
+    if (inYellowHome) return { fill: withAlpha(getCSS("--yellow"), 0.16), cls:"" };
+    if (inRedHome) return { fill: withAlpha(getCSS("--red"), 0.16), cls:"" };
+    if (inBlueHome) return { fill: withAlpha(getCSS("--blue"), 0.16), cls:"" };
 
-    if (hs) return { fill: withAlpha(colorOf(hs.id), 0.20), cls:"path" };
+    if (hs) return { fill: withAlpha(colorHex(hs.id), 0.30), cls:"path" };
 
     if (isPath){
-      if (SAFE_CELLS.has(k)){
-        const id = startOwnerByCell(k);
-        return { fill: withAlpha(colorOf(id), 0.22), cls:"path" };
+      // saját színű track szegmens színezése (játékosabb + védett mező)
+      const idx = PATH.findIndex(p => p[0]===x && p[1]===y);
+      for (const c of COLORS){
+        if (COLORED_TRACK.get(c.id)?.has(idx)){
+          return { fill: withAlpha(colorHex(c.id), 0.24), cls:"path" };
+        }
       }
       return { fill: pathBg, cls:"path" };
     }
+
     return { fill:bg, cls:"" };
+  }
+
+  function buildCenterDice(){
+    diceG = document.createElementNS(svg.namespaceURI,"g");
+    diceG.setAttribute("class","diceRoot");
+    // közép környéke, kicsit feljebb, hogy a szöveg alatt elférjen
+    diceG.setAttribute("transform","translate(7.5 7.05)");
+    svg.appendChild(diceG);
+
+    diceRect = document.createElementNS(svg.namespaceURI,"rect");
+    diceRect.setAttribute("x","-1.05");
+    diceRect.setAttribute("y","-0.95");
+    diceRect.setAttribute("width","2.10");
+    diceRect.setAttribute("height","1.90");
+    diceRect.setAttribute("rx","0.35");
+    diceRect.setAttribute("class","diceBox");
+    diceRect.setAttribute("stroke","rgba(255,255,255,.35)");
+    diceG.appendChild(diceRect);
+
+    diceFaceText = document.createElementNS(svg.namespaceURI,"text");
+    diceFaceText.setAttribute("x","0");
+    diceFaceText.setAttribute("y","0.20");
+    diceFaceText.setAttribute("text-anchor","middle");
+    diceFaceText.setAttribute("class","diceFaceText");
+    diceFaceText.textContent = "—";
+    diceG.appendChild(diceFaceText);
+
+    dicePlayerText = document.createElementNS(svg.namespaceURI,"text");
+    dicePlayerText.setAttribute("x","0");
+    dicePlayerText.setAttribute("y","1.55");
+    dicePlayerText.setAttribute("text-anchor","middle");
+    dicePlayerText.setAttribute("class","diceSubText");
+    dicePlayerText.textContent = "—";
+    diceG.appendChild(dicePlayerText);
+
+    diceHintText = document.createElementNS(svg.namespaceURI,"text");
+    diceHintText.setAttribute("x","0");
+    diceHintText.setAttribute("y","1.95");
+    diceHintText.setAttribute("text-anchor","middle");
+    diceHintText.setAttribute("class","diceHintText");
+    diceHintText.textContent = "";
+    diceG.appendChild(diceHintText);
+
+    // hit area
+    const hit = document.createElementNS(svg.namespaceURI,"rect");
+    hit.setAttribute("x","-1.20");
+    hit.setAttribute("y","-1.05");
+    hit.setAttribute("width","2.40");
+    hit.setAttribute("height","3.20");
+    hit.setAttribute("rx","0.45");
+    hit.setAttribute("fill","transparent");
+    hit.addEventListener("pointerdown", (ev) => {
+      ev.preventDefault();
+      if (state?.status === "lobby" && room.meId === state.hostId && (state.players?.length||0) >= 2){
+        startGameFlow();
+        return;
+      }
+      if (canRoll()) actRoll();
+    });
+    diceG.appendChild(hit);
   }
 
   function clearBoardPieces(){
     if (gPieces) gPieces.innerHTML = "";
+    if (gTargets) gTargets.innerHTML = "";
     pawnEls.clear();
   }
 
@@ -1220,24 +1370,24 @@
 
       const ring = document.createElementNS(svg.namespaceURI,"circle");
       ring.setAttribute("class","ring");
-      ring.setAttribute("r","0.38");
-      ring.setAttribute("stroke", withAlpha(colorOf(piece.playerId), 0.85));
+      ring.setAttribute("r","0.40");
+      ring.setAttribute("stroke", withAlpha(colorHex(piece.playerId), 0.95));
 
       const body = document.createElementNS(svg.namespaceURI,"circle");
-      body.setAttribute("r","0.26");
-      body.setAttribute("fill", colorOf(piece.playerId));
-      body.setAttribute("stroke","rgba(255,255,255,.28)");
-      body.setAttribute("stroke-width","0.07");
+      body.setAttribute("r","0.28");
+      body.setAttribute("fill", colorHex(piece.playerId));
+      body.setAttribute("stroke","rgba(255,255,255,.30)");
+      body.setAttribute("stroke-width","0.08");
 
       const shine = document.createElementNS(svg.namespaceURI,"circle");
-      shine.setAttribute("r","0.10");
-      shine.setAttribute("fill","rgba(255,255,255,.18)");
+      shine.setAttribute("r","0.11");
+      shine.setAttribute("fill","rgba(255,255,255,.20)");
       shine.setAttribute("cx","-0.08");
       shine.setAttribute("cy","-0.08");
 
       const hit = document.createElementNS(svg.namespaceURI,"circle");
       hit.setAttribute("class","hit");
-      hit.setAttribute("r","0.55");
+      hit.setAttribute("r","0.60");
       hit.addEventListener("pointerdown", (ev) => {
         ev.preventDefault();
         const id = g.dataset.pieceId;
@@ -1270,39 +1420,118 @@
     }
   }
 
+  function renderTargets(){
+    if (!gTargets) return;
+    gTargets.innerHTML = "";
+
+    if (!state || state.status !== "playing") return;
+    if (!isMyTurn()) return;
+    if (state.phase !== "needPick") return;
+
+    const cp = currentPlayer(state);
+    const die = state.die;
+
+    for (const pid of (state.movablePieceIds || [])){
+      const piece = state.pieces.find(p => p.id === pid);
+      if (!piece) continue;
+
+      const mv = computeLegalMove(state, piece, die);
+      if (!mv) continue;
+
+      // cél pozíció
+      const ghost = deepClone(piece);
+      ghost.state = mv.state;
+      ghost.trackIndex = mv.trackIndex ?? null;
+      ghost.stretchIndex = mv.stretchIndex ?? null;
+
+      const pos = pieceToPos(state, ghost);
+
+      const tg = document.createElementNS(svg.namespaceURI,"g");
+      tg.setAttribute("class","target");
+      tg.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
+
+      const ring = document.createElementNS(svg.namespaceURI,"circle");
+      ring.setAttribute("class","t-ring");
+      ring.setAttribute("r","0.42");
+      ring.setAttribute("stroke", withAlpha(colorHex(cp.colorId), 0.95));
+      tg.appendChild(ring);
+
+      const dot = document.createElementNS(svg.namespaceURI,"circle");
+      dot.setAttribute("class","t-dot");
+      dot.setAttribute("r","0.07");
+      dot.setAttribute("fill", "rgba(255,255,255,.55)");
+      tg.appendChild(dot);
+
+      gTargets.appendChild(tg);
+    }
+  }
+
+  function renderDiceOverlay(){
+    if (!diceG || !diceRect) return;
+
+    if (!state || state.status === "lobby"){
+      setDiceFace("—");
+      dicePlayerText.textContent = state?.status === "lobby" ? "Lobby (host start)" : "—";
+      diceHintText.textContent = state?.status === "lobby" ? "Katt: Start (host)" : "";
+      diceRect.setAttribute("stroke", "rgba(255,255,255,.35)");
+      return;
+    }
+
+    const cp = currentPlayer(state);
+    const c = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
+    diceRect.setAttribute("stroke", withAlpha(c, 0.95));
+
+    // face: ha van aktuális die, azt mutatja, különben lastRoll
+    if (state.die){
+      setDiceFace(state.die);
+    } else if (state.lastRoll && (Date.now() - state.lastRoll.at) < 20000){
+      setDiceFace(state.lastRoll.die);
+    } else {
+      setDiceFace("—");
+    }
+
+    dicePlayerText.textContent = cp ? `${cp.name} jön` : "—";
+    if (canRoll()){
+      diceHintText.textContent = "Katt: DOBÁS";
+    } else if (isMyTurn() && state.phase === "needPick"){
+      diceHintText.textContent = "Válassz bábut";
+    } else {
+      diceHintText.textContent = "Várj…";
+    }
+  }
+
   // =======================
-  // 13) ANIMATION
+  // ANIMATION (hop step-by-step)
   // =======================
   async function animateMove(anim){
     const g = pawnEls.get(anim.pieceId);
     if (!g) return;
 
-    g.classList.add("animating");
-    try{
-      for (let i=0;i<anim.steps.length;i++){
-        const p = anim.steps[i];
-        g.setAttribute("transform", `translate(${p.x}, ${p.y})`);
-        await delay(i === 0 ? 40 : 90);
-      }
+    for (let i=0;i<anim.steps.length;i++){
+      const p = anim.steps[i];
+      g.setAttribute("transform", `translate(${p.x}, ${p.y})`);
+      // hop
+      g.classList.remove("hop");
+      void g.getBBox(); // reflow-ish SVG
+      g.classList.add("hop");
+      await delay(i === 0 ? 60 : 110);
+    }
 
-      if (anim.captures?.length){
-        for (const vid of anim.captures){
-          const vg = pawnEls.get(vid);
-          if (!vg) continue;
-          vg.style.transition = "opacity 120ms ease";
-          vg.style.opacity = "0.15";
-          await delay(120);
-          vg.style.opacity = "1";
-          vg.style.transition = "";
-        }
+    if (anim.captures?.length){
+      for (const vid of anim.captures){
+        const vg = pawnEls.get(vid);
+        if (!vg) continue;
+        vg.style.transition = "opacity 120ms ease";
+        vg.style.opacity = "0.15";
+        await delay(120);
+        vg.style.opacity = "1";
+        vg.style.transition = "";
       }
-    } finally {
-      g.classList.remove("animating");
     }
   }
 
   // =======================
-  // 14) MODALS
+  // MODALS
   // =======================
   function openRules(){ rulesModal.classList.add("show"); rulesModal.setAttribute("aria-hidden","false"); }
   function closeRules(){ rulesModal.classList.remove("show"); rulesModal.setAttribute("aria-hidden","true"); }
@@ -1318,23 +1547,26 @@
   }
 
   // =======================
-  // 15) RENDER ALL
+  // RENDER ALL
   // =======================
   function renderAll(){
     buildBoardIfNeeded();
     renderTurn();
     renderScore();
     renderLogFromState();
+
     ensurePawnEls();
     renderPieces();
+    renderTargets();
+    renderDiceOverlay();
+
     refreshControls();
   }
 
   // =======================
-  // 16) WIRES
+  // WIRES
   // =======================
   elBtnRoll.addEventListener("click", actRoll);
-
   elBtnSkip.addEventListener("click", async () => {
     if (!state || state.status !== "playing" || !isMyTurn()) return;
     const s2 = nextTurnInState(state, false);
@@ -1342,8 +1574,8 @@
     await pushState(s2, null);
   });
 
-  elBtnStartMain.addEventListener("click", () => startGameFlow().catch(() => setHint("Start hiba.")));
-  btnStart.addEventListener("click", () => startGameFlow().catch(() => setHint("Start hiba.")));
+  elBtnStartMain.addEventListener("click", () => startGameFlow().catch(()=>setHint("Start hiba.")));
+  btnStart.addEventListener("click", () => startGameFlow().catch(()=>setHint("Start hiba.")));
 
   btnJoin.addEventListener("click", () => joinRoomFlow().catch(()=>setHint("Join hiba.")));
   btnCreate.addEventListener("click", () => createRoomFlow().catch(()=>setHint("Create hiba.")));
@@ -1378,10 +1610,8 @@
   openLobby();
 
   if (sb){
-    netState.textContent = "ready";
-    netState.style.color = "var(--yellow)";
+    setNet("ready", "var(--yellow)");
   } else {
-    netState.textContent = "no-supabase";
-    netState.style.color = "var(--red)";
+    setNet("no-supabase", "var(--red)");
   }
 })();
