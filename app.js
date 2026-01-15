@@ -4,12 +4,14 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
+
+  const OFFLINE = !sb;
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -215,6 +217,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   let gPieces = null;
   let gTargets = null;
   let diceG = null;
+  let diceInnerG = null;
   let diceRect = null;
   let diceFaceText = null;
   let dicePlayerText = null;
@@ -226,10 +229,11 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // =======================
   async function requireSupabase(){
     if (!sb){
-      setHint("Supabase nincs beállítva (URL + Publishable key).");
-      setNet("no-supabase", "var(--red)");
-      throw new Error("Supabase not configured");
+      // OFFLINE mód: nincs realtime, de a játék fusson helyben
+      setNet("offline", "var(--yellow)");
+      return false;
     }
+    return true;
   }
 
   function setNet(txt, color){
@@ -372,6 +376,20 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   }
 
   async function pushState(newState, extras){
+    // OFFLINE: nincs DB/realtime, csak helyben frissítünk + animálunk
+    if (!sb){
+      version = (version || 0) + 1;
+      applySnapshot(newState, version);
+      if (extras?.moveAnim){
+        animLock = true;
+        try{ await animateMove(extras.moveAnim); } finally { animLock = false; }
+      }
+      if (extras?.rollAnim?.die){
+        diceRollAnim(extras.rollAnim.die);
+      }
+      return;
+    }
+
     try{
       const upd = await updateRoomState(newState, version);
       applySnapshot(upd.state, upd.version);
@@ -640,6 +658,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // =======================
   function isMyTurn(){
     if (!state || state.status !== "playing") return false;
+    if (OFFLINE) return true;
     const cp = currentPlayer(state);
     return !!cp && cp.id === room.meId;
   }
@@ -668,17 +687,19 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   }
 
   async function diceRollAnim(finalDie){
-    if (!diceG) return;
+    if (!diceInnerG) return;
 
-    diceG.classList.add("diceRolling");
-    const spins = 10;
-    for (let i=0;i<spins;i++){
-      setDiceFace((i % 6) + 1);
-      await delay(32);
+    diceInnerG.classList.add("diceRolling");
+
+    const start = Date.now();
+    while (Date.now() - start < 2000){
+      setDiceFace((Math.floor(Math.random()*6) + 1));
+      await delay(80);
     }
+
     setDiceFace(finalDie);
-    await delay(80);
-    diceG.classList.remove("diceRolling");
+    await delay(120);
+    diceInnerG.classList.remove("diceRolling");
   }
 
   // =======================
@@ -911,6 +932,44 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const name = meName();
     if (!name) return setHint("Írd be a neved.");
 
+    // OFFLINE mód: helyi lobby (hot-seat), nincs szobakód/join
+    if (!sb){
+      const count = Number(playerCountSel.value);
+      ui.extraTurnOnSix = !!optExtraTurnOnSix.checked;
+      ui.autoMove = !!optAutoMove.checked;
+
+      const hostId = crypto.randomUUID();
+      room.meId = hostId;
+      room.hostId = hostId;
+      room.code = "OFFLINE";
+
+      const init = makeInitialState(hostId, count, ui);
+      const chosen = selectColors(count);
+      room.myColor = chosen[0].id;
+
+      // feltöltjük a játékosokat (hot-seat)
+      for (let i=0;i<count;i++){
+        const c = chosen[i].id;
+        init.players.push({
+          id: i===0 ? hostId : crypto.randomUUID(),
+          colorId: c,
+          name: i===0 ? name : `Játékos ${i+1}`,
+          finished: 0,
+          joinedAt: nowIso(),
+          isHost: i===0
+        });
+      }
+      init.log.unshift(`${name} (offline host) létrehozta a játékot.`);
+
+      setNet("offline", "var(--yellow)");
+      applySnapshot(init, 0);
+      showLobbyState();
+      closeLobby();
+      setHint("OFFLINE mód: hot-seat játék. Host indít: Start (min. 2 fő). ");
+      refreshControls();
+      return;
+    }
+
     const count = Number(playerCountSel.value);
     ui.extraTurnOnSix = !!optExtraTurnOnSix.checked;
     ui.autoMove = !!optAutoMove.checked;
@@ -963,6 +1022,11 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   async function joinRoomFlow(){
     await requireSupabase();
+
+    if (!sb){
+      setHint("OFFLINE módban nincs Join (nincs Supabase). Nyomj Create.");
+      return;
+    }
 
     const name = meName();
     if (!name) return setHint("Írd be a neved.");
@@ -1251,8 +1315,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   }
 
   function getCellInfo(x,y){
-    // DESIGN ONLY: világos, "klasszik" ludo tábla (nem játékszabály)
-    const bg = "#f6f7fb";
+    const bg = "#f7f7f7";
     const pathBg = "#ffffff";
     const centerBg = "#ffffff";
 
@@ -1262,29 +1325,29 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const inRedHome = (x>=9 && y>=9);
     const inCenter = (x>=6 && x<=8 && y>=6 && y<=8);
 
+    // classic: belső fehér 'otthon' 4x4
+    const innerGreen = (x>=1 && x<=4 && y>=1 && y<=4);
+    const innerYellow = (x>=10 && x<=13 && y>=1 && y<=4);
+    const innerBlue = (x>=1 && x<=4 && y>=10 && y<=13);
+    const innerRed = (x>=10 && x<=13 && y>=10 && y<=13);
+
     const k = cellKey(x,y);
     const isPath = PATH_SET.has(k);
     const hs = HOME_STRETCH_MAP.get(k);
 
     if (inCenter) return { fill:centerBg, cls:"center" };
-    // nagy színblokkok, mint a klasszik táblán
-    if (inGreenHome) return { fill: withAlpha(getCSS("--green"), 0.92), cls:"home" };
-    if (inYellowHome) return { fill: withAlpha(getCSS("--yellow"), 0.92), cls:"home" };
-    if (inRedHome) return { fill: withAlpha(getCSS("--red"), 0.92), cls:"home" };
-    if (inBlueHome) return { fill: withAlpha(getCSS("--blue"), 0.92), cls:"home" };
 
-    if (hs) return { fill: withAlpha(colorHex(hs.id), 0.78), cls:"path" };
+    // home quadrants (solid like classic ludo)
+    if (inGreenHome) return { fill: innerGreen ? "#ffffff" : colorHex("green"), cls:"" };
+    if (inYellowHome) return { fill: innerYellow ? "#ffffff" : colorHex("yellow"), cls:"" };
+    if (inRedHome) return { fill: innerRed ? "#ffffff" : colorHex("red"), cls:"" };
+    if (inBlueHome) return { fill: innerBlue ? "#ffffff" : colorHex("blue"), cls:"" };
 
-    if (isPath){
-      // saját színű track szegmens színezése (csak design)
-      const idx = PATH.findIndex(p => p[0]===x && p[1]===y);
-      for (const c of COLORS){
-        if (COLORED_TRACK.get(c.id)?.has(idx)){
-          return { fill: withAlpha(colorHex(c.id), 0.36), cls:"path" };
-        }
-      }
-      return { fill: pathBg, cls:"path" };
-    }
+    // home stretch = solid color lane
+    if (hs) return { fill: colorHex(hs.id), cls:"path" };
+
+    // track/path = white
+    if (isPath) return { fill: pathBg, cls:"path" };
 
     return { fill:bg, cls:"" };
   }
@@ -1292,9 +1355,14 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   function buildCenterDice(){
     diceG = document.createElementNS(svg.namespaceURI,"g");
     diceG.setAttribute("class","diceRoot");
-    // közép környéke, kicsit feljebb, hogy a szöveg alatt elférjen
+    // közép környéke
     diceG.setAttribute("transform","translate(7.5 7.05)");
     svg.appendChild(diceG);
+
+    // belső group, hogy a CSS transform ne üsse felül a fenti translate-et
+    diceInnerG = document.createElementNS(svg.namespaceURI,"g");
+    diceInnerG.setAttribute("class","diceInner");
+    diceG.appendChild(diceInnerG);
 
     diceRect = document.createElementNS(svg.namespaceURI,"rect");
     diceRect.setAttribute("x","-1.05");
@@ -1303,34 +1371,35 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     diceRect.setAttribute("height","1.90");
     diceRect.setAttribute("rx","0.35");
     diceRect.setAttribute("class","diceBox");
-    diceRect.setAttribute("stroke","rgba(255,255,255,.35)");
-    diceG.appendChild(diceRect);
+    diceRect.setAttribute("stroke","rgba(0,0,0,.35)");
+    diceRect.setAttribute("fill","rgba(255,255,255,.92)");
+    diceInnerG.appendChild(diceRect);
 
     diceFaceText = document.createElementNS(svg.namespaceURI,"text");
     diceFaceText.setAttribute("x","0");
-    diceFaceText.setAttribute("y","0.20");
+    diceFaceText.setAttribute("y","0.25");
     diceFaceText.setAttribute("text-anchor","middle");
     diceFaceText.setAttribute("class","diceFaceText");
     diceFaceText.textContent = "—";
-    diceG.appendChild(diceFaceText);
+    diceInnerG.appendChild(diceFaceText);
 
     dicePlayerText = document.createElementNS(svg.namespaceURI,"text");
     dicePlayerText.setAttribute("x","0");
-    dicePlayerText.setAttribute("y","1.55");
+    dicePlayerText.setAttribute("y","1.18");
     dicePlayerText.setAttribute("text-anchor","middle");
     dicePlayerText.setAttribute("class","diceSubText");
-    dicePlayerText.textContent = "—";
-    diceG.appendChild(dicePlayerText);
+    dicePlayerText.textContent = "";
+    diceInnerG.appendChild(dicePlayerText);
 
     diceHintText = document.createElementNS(svg.namespaceURI,"text");
     diceHintText.setAttribute("x","0");
-    diceHintText.setAttribute("y","1.95");
+    diceHintText.setAttribute("y","1.65");
     diceHintText.setAttribute("text-anchor","middle");
     diceHintText.setAttribute("class","diceHintText");
     diceHintText.textContent = "";
-    diceG.appendChild(diceHintText);
+    diceInnerG.appendChild(diceHintText);
 
-    // hit area
+    // hit area (marad a diceG-n, hogy a katt a helyén maradjon)
     const hit = document.createElementNS(svg.namespaceURI,"rect");
     hit.setAttribute("x","-1.20");
     hit.setAttribute("y","-1.05");
@@ -1372,24 +1441,42 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
       const ring = document.createElementNS(svg.namespaceURI,"circle");
       ring.setAttribute("class","ring");
-      ring.setAttribute("r","0.40");
-      ring.setAttribute("stroke", withAlpha(colorHex(piece.playerId), 0.95));
+      ring.setAttribute("r","0.48");
+      ring.setAttribute("stroke", "rgba(0,0,0,.35)");
+      ring.setAttribute("stroke-width","0.08");
+      ring.setAttribute("fill","rgba(255,255,255,.22)");
 
-      const body = document.createElementNS(svg.namespaceURI,"circle");
-      body.setAttribute("r","0.28");
+      // Pawn (classic-ish): base + body + head (shaded)
+      const base = document.createElementNS(svg.namespaceURI,"ellipse");
+      base.setAttribute("cx","0");
+      base.setAttribute("cy","0.30");
+      base.setAttribute("rx","0.34");
+      base.setAttribute("ry","0.16");
+      base.setAttribute("fill", "rgba(0,0,0,.25)");
+
+      const body = document.createElementNS(svg.namespaceURI,"path");
+      body.setAttribute("d","M -0.22 0.28 C -0.35 0.10 -0.26 -0.25 0 -0.28 C 0.26 -0.25 0.35 0.10 0.22 0.28 C 0.18 0.36 0.10 0.42 0 0.42 C -0.10 0.42 -0.18 0.36 -0.22 0.28 Z");
       body.setAttribute("fill", colorHex(piece.playerId));
-      body.setAttribute("stroke","rgba(255,255,255,.30)");
-      body.setAttribute("stroke-width","0.08");
+      body.setAttribute("stroke","rgba(0,0,0,.35)");
+      body.setAttribute("stroke-width","0.06");
+
+      const head = document.createElementNS(svg.namespaceURI,"circle");
+      head.setAttribute("cx","0");
+      head.setAttribute("cy","-0.38");
+      head.setAttribute("r","0.18");
+      head.setAttribute("fill", colorHex(piece.playerId));
+      head.setAttribute("stroke","rgba(0,0,0,.35)");
+      head.setAttribute("stroke-width","0.06");
 
       const shine = document.createElementNS(svg.namespaceURI,"circle");
-      shine.setAttribute("r","0.11");
-      shine.setAttribute("fill","rgba(255,255,255,.20)");
+      shine.setAttribute("r","0.10");
+      shine.setAttribute("fill","rgba(255,255,255,.35)");
       shine.setAttribute("cx","-0.08");
-      shine.setAttribute("cy","-0.08");
+      shine.setAttribute("cy","-0.50");
 
       const hit = document.createElementNS(svg.namespaceURI,"circle");
       hit.setAttribute("class","hit");
-      hit.setAttribute("r","0.60");
+      hit.setAttribute("r","0.70");
       hit.addEventListener("pointerdown", (ev) => {
         ev.preventDefault();
         const id = g.dataset.pieceId;
@@ -1397,7 +1484,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       });
 
       g.appendChild(ring);
+      g.appendChild(base);
       g.appendChild(body);
+      g.appendChild(head);
       g.appendChild(shine);
       g.appendChild(hit);
 
@@ -1530,6 +1619,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         vg.style.transition = "";
       }
     }
+  
+
+    // 2s szünet a lépés után (követhetőbb körváltás)
+    await delay(2000);
   }
 
   // =======================
