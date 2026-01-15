@@ -44,14 +44,13 @@
         </div>
       </div>
 
-     <div class="panel-actions">
-  <button class="btn primary" id="btnStartMain" type="button" hidden disabled>Start</button>
-  <button class="btn primary" id="btnRoll" type="button" disabled>Dobás</button>
-  <button class="btn" id="btnSkip" type="button" disabled>Passz</button>
-</div>
+      <div class="panel-actions">
+        <button class="btn primary" id="btnStartMain" type="button" hidden disabled>Start</button>
+        <button class="btn primary" id="btnRoll" type="button" disabled>Dobás</button>
+        <button class="btn" id="btnSkip" type="button" disabled>Passz</button>
+      </div>
 
-
-      <div class="hint" id="hint">Nyisd meg a lobby-t és csinálj / joinolj szobát.</div>
+      <div class="hint" id="hint">Csatlakozz egy szobához vagy csinálj újat.</div>
 
       <div class="roombar" id="roomBar" hidden>
         <div class="roompill">
@@ -126,7 +125,7 @@
           </div>
 
           <div class="players" id="playersList"></div>
-          <div class="help">Ha megvan a létszám, a host indíthat.</div>
+          <div class="help">Host: Start a jobb alsó gombbal (vagy fent a panelen). Minimum 2 fő.</div>
         </div>
       </div>
 
@@ -137,7 +136,7 @@
       </div>
 
       <div class="modal-footnote">
-        <span class="muted2">Realtime: Supabase. Frontend: GitHub Pages.</span>
+        <span class="muted2">Realtime: Supabase • Frontend: GitHub Pages</span>
       </div>
     </div>
   </div>
@@ -158,7 +157,7 @@
           <li>2 azonos bábu egy mezőn blokkol (oda nem lehet érkezni).</li>
           <li>Cél: mind a 4 bábut bevinni a hazafutó soron a középig.</li>
         </ul>
-        <p class="muted">Megjegyzés: a Supabase policy-k a demó kedvéért nyitottak. Ha kész, lezárjuk rendesen.</p>
+        <p class="muted">Ha a realtime néha megmakacsolja magát, a polling fallback akkor is frissít.</p>
       </div>
     </div>
   </div>
@@ -180,7 +179,7 @@
   </div>
 
   <!-- Supabase (CDN) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>
