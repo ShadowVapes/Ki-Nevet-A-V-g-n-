@@ -4,8 +4,8 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -76,22 +76,23 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   const COLORS = [
     { id:"green",  label:"Zöld",  hex:getCSS("--green"),  startCoord:[1,6],
-      homeSlots:[[2,2],[4,2],[2,4],[4,4]],
+      // otthon: 4x4 mező sarkai
+      homeSlots:[[1,1],[4,1],[1,4],[4,4]],
       homeStretch:[[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],
       finishSpot:[6.75, 6.75],
     },
     { id:"yellow", label:"Sárga", hex:getCSS("--yellow"), startCoord:[8,1],
-      homeSlots:[[10,2],[12,2],[10,4],[12,4]],
+      homeSlots:[[10,1],[13,1],[10,4],[13,4]],
       homeStretch:[[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],
       finishSpot:[8.25, 6.75],
     },
     { id:"red",    label:"Piros", hex:getCSS("--red"),   startCoord:[13,8],
-      homeSlots:[[10,10],[12,10],[10,12],[12,12]],
+      homeSlots:[[10,10],[13,10],[10,13],[13,13]],
       homeStretch:[[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],
       finishSpot:[8.25, 8.25],
     },
     { id:"blue",   label:"Kék",   hex:getCSS("--blue"),  startCoord:[6,13],
-      homeSlots:[[2,10],[4,10],[2,12],[4,12]],
+      homeSlots:[[1,10],[4,10],[1,13],[4,13]],
       homeStretch:[[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]],
       finishSpot:[6.75, 8.25],
     },
@@ -216,6 +217,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   let svg = null;
   let gPieces = null;
   let gTargets = null;
+  let gLabels = null;
+  const labelEls = new Map(); // colorId -> <text>
   let diceG = null;
   let diceInnerG = null;
   let diceRect = null;
@@ -589,30 +592,29 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const coord = PATH[piece.trackIndex];
       const key = cellKey(coord[0], coord[1]);
 
-      // safe start mezők (mindenkinek safe)
-      const safeStart = SAFE_START_CELLS.has(key);
+      // start mező: csak a saját színe védett (más szín ott üthető)
+      const startOwner = SAFE_START_CELLS.has(key) ? startOwnerByCell(key) : null;
 
-      if (!safeStart){
-        const victims = s.pieces.filter(pp =>
-          pp.id !== piece.id &&
-          pp.state === "track" &&
-          pp.trackIndex === piece.trackIndex &&
-          pp.playerId !== piece.playerId
-        );
+      const victims = s.pieces.filter(pp =>
+        pp.id !== piece.id &&
+        pp.state === "track" &&
+        pp.trackIndex === piece.trackIndex &&
+        pp.playerId !== piece.playerId
+      );
 
-        if (victims.length){
-          // FIX: saját színű mezőn álló bábu nem üthető
-          const survivors = [];
-          const knocked = [];
+      if (victims.length){
+        const survivors = [];
+        const knocked = [];
 
-          for (const v of victims){
-            const protectedByOwnColor = isProtectedTrackForColor(v.playerId, v.trackIndex);
-            if (protectedByOwnColor){
-              survivors.push(v);
-            }else{
-              knocked.push(v);
-            }
+        for (const v of victims){
+          const protectedOnStart = !!startOwner && v.playerId === startOwner;
+          const protectedByOwnColorTrack = isProtectedTrackForColor(v.playerId, v.trackIndex);
+          if (protectedOnStart || protectedByOwnColorTrack){
+            survivors.push(v);
+          } else {
+            knocked.push(v);
           }
+        }
 
           for (const v of knocked){
             v.state = "home";
@@ -620,11 +622,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
             v.stretchIndex = null;
           }
 
-          if (knocked.length){
-            s.log.unshift(`${actor.name} ütött: ${knocked.length} bábu haza.`);
-          } else if (survivors.length){
-            s.log.unshift(`${actor.name} próbált ütni, de védett mező (saját szín).`);
-          }
+        if (knocked.length){
+          s.log.unshift(`${actor.name} ütött: ${knocked.length} bábu haza.`);
+        } else if (survivors.length){
+          s.log.unshift(`${actor.name} próbált ütni, de védett mező.`);
         }
       }
     }
@@ -663,10 +664,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     return !!cp && cp.id === room.meId;
   }
   function canRoll(){
-    return state && state.status === "playing" && state.phase === "needRoll" && isMyTurn();
+    return !animLock && state && state.status === "playing" && state.phase === "needRoll" && isMyTurn();
   }
   function canPick(pieceId){
-    return state && state.status === "playing" && state.phase === "needPick" && isMyTurn() && (state.movablePieceIds||[]).includes(pieceId);
+    return !animLock && state && state.status === "playing" && state.phase === "needPick" && isMyTurn() && (state.movablePieceIds||[]).includes(pieceId);
   }
 
   // =======================
@@ -692,9 +693,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     diceInnerG.classList.add("diceRolling");
 
     const start = Date.now();
-    while (Date.now() - start < 2000){
+    while (Date.now() - start < 1000){
       setDiceFace((Math.floor(Math.random()*6) + 1));
-      await delay(80);
+      await delay(60);
     }
 
     setDiceFace(finalDie);
@@ -710,8 +711,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
     const die = rollDie();
 
-    // local vizu anim azonnal
-    diceRollAnim(die);
+    // vizu anim előbb (ne mutassa a célokat amíg "forog")
+    await diceRollAnim(die);
 
     const s = deepClone(state);
     const cp = currentPlayer(s);
@@ -797,17 +798,19 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const coord = PATH[landing];
       const key = cellKey(coord[0], coord[1]);
 
-      if (!SAFE_START_CELLS.has(key)){
-        const victims = prev.pieces.filter(pp =>
-          pp.id !== piece.id &&
-          pp.state === "track" &&
-          pp.trackIndex === landing &&
-          pp.playerId !== piece.playerId
-        );
-        for (const v of victims){
-          if (!isProtectedTrackForColor(v.playerId, v.trackIndex)){
-            captures.push(v.id);
-          }
+      const startOwner = SAFE_START_CELLS.has(key) ? startOwnerByCell(key) : null;
+
+      const victims = prev.pieces.filter(pp =>
+        pp.id !== piece.id &&
+        pp.state === "track" &&
+        pp.trackIndex === landing &&
+        pp.playerId !== piece.playerId
+      );
+      for (const v of victims){
+        const protectedOnStart = !!startOwner && v.playerId === startOwner;
+        const protectedByOwnColorTrack = isProtectedTrackForColor(v.playerId, v.trackIndex);
+        if (!(protectedOnStart || protectedByOwnColorTrack)){
+          captures.push(v.id);
         }
       }
     }
@@ -840,17 +843,11 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       return;
     }
 
-    // extra turn on 6
+    // extra turn on 6 (korlát nélkül)
     const extra = (s2.settings.extraTurnOnSix && state.die === 6);
     if (extra){
-      s2.sixStreak = (s2.sixStreak || 0) + 1;
-      if (s2.sixStreak >= 3){
-        s2.log.unshift(`${cpAfter.name} 3x hatos. Kör tovább.`);
-        s2 = nextTurnInState(s2, false);
-      } else {
-        s2.log.unshift(`${cpAfter.name} 6-os! Még egy dobás.`);
-        s2 = nextTurnInState(s2, true);
-      }
+      s2.log.unshift(`${cpAfter.name} 6-os! Még egy dobás.`);
+      s2 = nextTurnInState(s2, true);
     } else {
       s2 = nextTurnInState(s2, false);
     }
@@ -1258,6 +1255,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox","0 0 15 15");
     svg.setAttribute("preserveAspectRatio","xMidYMid meet");
+    svg.setAttribute("class","boardSvg");
 
     // cells
     for (let y=0;y<15;y++){
@@ -1301,6 +1299,26 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     }
 
     // targets layer
+    gLabels = document.createElementNS(svg.namespaceURI,"g");
+    gLabels.setAttribute("class","cornerLabels");
+    svg.appendChild(gLabels);
+
+    // corner labels (ki melyik szín)
+    const makeLabel = (colorId, x, y, anchor) => {
+      const t = document.createElementNS(svg.namespaceURI,"text");
+      t.setAttribute("x", x);
+      t.setAttribute("y", y);
+      t.setAttribute("text-anchor", anchor);
+      t.setAttribute("class", `cornerLabel ${colorId}`);
+      t.textContent = "";
+      gLabels.appendChild(t);
+      labelEls.set(colorId, t);
+    };
+    makeLabel("green", 1.2, 0.95, "start");
+    makeLabel("yellow", 13.8, 0.95, "end");
+    makeLabel("blue", 1.2, 14.65, "start");
+    makeLabel("red", 13.8, 14.65, "end");
+
     gTargets = document.createElementNS(svg.namespaceURI,"g");
     svg.appendChild(gTargets);
 
@@ -1345,6 +1363,12 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
     // home stretch = solid color lane
     if (hs) return { fill: colorHex(hs.id), cls:"path" };
+
+    // start mező: a tulaj színével színezve
+    if (isPath && SAFE_START_CELLS.has(k)){
+      const owner = startOwnerByCell(k);
+      return { fill: withAlpha(colorHex(owner), 0.35), cls:"path start" };
+    }
 
     // track/path = white
     if (isPath) return { fill: pathBg, cls:"path" };
@@ -1571,6 +1595,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const cp = currentPlayer(state);
     const c = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
     diceRect.setAttribute("stroke", withAlpha(c, 0.95));
+    if (diceInnerG){
+      diceInnerG.classList.toggle("dicePulse", state.status === "playing" && state.phase === "needRoll");
+    }
 
     // face: ha van aktuális die, azt mutatja, különben lastRoll
     if (state.die){
@@ -1591,6 +1618,34 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     }
   }
 
+  function myColorIdForView(){
+    if (!state) return null;
+    if (OFFLINE){
+      return currentPlayer(state)?.colorId || "blue";
+    }
+    const me = state.players?.find(p => p.id === room.meId);
+    return me?.colorId || room.myColor || null;
+  }
+
+  function applyBoardView(){
+    if (!svg) return;
+    const myC = myColorIdForView();
+    const rotMap = { blue:0, red:90, yellow:180, green:270 };
+    const deg = rotMap[myC] ?? 0;
+    svg.style.transformOrigin = "50% 50%";
+    svg.style.transform = `rotate(${deg}deg)`;
+
+    // színekhez név kiírása
+    if (labelEls.size){
+      for (const c of COLORS){
+        const t = labelEls.get(c.id);
+        if (!t) continue;
+        const pl = state.players?.find(p => p.colorId === c.id);
+        t.textContent = pl ? pl.name : c.label;
+      }
+    }
+  }
+
   // =======================
   // ANIMATION (hop step-by-step)
   // =======================
@@ -1601,11 +1656,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     for (let i=0;i<anim.steps.length;i++){
       const p = anim.steps[i];
       g.setAttribute("transform", `translate(${p.x}, ${p.y})`);
-      // hop
-      g.classList.remove("hop");
-      void g.getBBox(); // reflow-ish SVG
-      g.classList.add("hop");
-      await delay(i === 0 ? 60 : 110);
+      await delay(i === 0 ? 80 : 140);
     }
 
     if (anim.captures?.length){
@@ -1646,6 +1697,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // =======================
   function renderAll(){
     buildBoardIfNeeded();
+    applyBoardView();
     renderTurn();
     renderScore();
     renderLogFromState();

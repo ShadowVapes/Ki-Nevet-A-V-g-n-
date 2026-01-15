@@ -298,6 +298,27 @@ select, input[type="text"]{
 }
 .pawn.hop { animation: hop 120ms ease-out 1; }
 
+/* kérés: bábuk ne "ugráljanak" */
+.pawn.hop { animation: none !important; }
+
+/* dice: pulzáló kiemelés a soron következőnek */
+@keyframes dicePulseAnim{
+  0%{transform: scale(1)}
+  50%{transform: scale(1.06)}
+  100%{transform: scale(1)}
+}
+.dicePulse{animation: dicePulseAnim 1s ease-in-out infinite; transform-box: fill-box; transform-origin: center;}
+
+/* board rotation smooth */
+.boardSvg{transition: transform 220ms ease; transform-origin: 50% 50%;}
+
+/* sarok feliratok (ki melyik szín) */
+.cornerLabel{font-size:.5px; font-weight:900; fill: rgba(255,255,255,.92); stroke: rgba(0,0,0,.55); stroke-width:.12px; paint-order: stroke;}
+.cornerLabel.green{fill: rgba(255,255,255,.94)}
+.cornerLabel.yellow{fill: rgba(255,255,255,.94)}
+.cornerLabel.red{fill: rgba(255,255,255,.94)}
+.cornerLabel.blue{fill: rgba(255,255,255,.94)}
+
 /* Target preview markers */
 .target{
   pointer-events:none;
@@ -356,6 +377,16 @@ select, input[type="text"]{
 
 @media (max-width: 768px){
   #btnRoll, #btnSkip{display:none !important;}
+}
+
+/* Telefon: csak a tábla fullscreenben, minden más rejtve */
+@media (max-width: 768px){
+  .topbar, .panel, .board-help{display:none !important;}
+  .layout{grid-template-columns: 1fr !important; padding:0 !important; gap:0 !important;}
+  .board-card{border:none !important; border-radius:0 !important; box-shadow:none !important; padding:0 !important; background:transparent !important;}
+  .board-shell{padding:0 !important;}
+  body{padding:0 !important;}
+  .board{width: min(100vw, 100vh) !important; height: min(100vw, 100vh) !important; margin: 0 auto !important;}
 }
 
 .diceInner.diceRolling{animation:none}
