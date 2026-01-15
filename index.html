@@ -3,16 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0f14" />
-  <title>Ki nevet a végén – Online (2–4 játékos)</title>
+  <meta name="theme-color" content="#1b1f2a" />
+  <title>Ki nevet a végén – Online (2–4)</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="dot" aria-hidden="true"></span>
-      <span>Ki nevet a végén</span>
-      <span class="sub">online szobás • 2–4 játékos</span>
+      <span class="logo">🎲</span>
+      <div class="brandtxt">
+        <div class="t">Ki nevet a végén</div>
+        <div class="s">online szobás • 2–4 játékos • teló/gép</div>
+      </div>
     </div>
 
     <div class="top-actions">
@@ -26,27 +28,28 @@
       <div class="board-shell">
         <div id="board" class="board" role="application" aria-label="Ki nevet a végén tábla"></div>
       </div>
+      <div class="board-help" id="boardHelp">
+        Katt a középső kockára dobáshoz (csak ha te jössz).
+      </div>
     </section>
 
     <section class="panel" aria-label="Vezérlőpanel">
-      <div class="panel-top">
-        <div class="turnline">
-          <div class="pill">
-            <span class="pill-dot" id="turnDot" aria-hidden="true"></span>
-            <span class="pill-text" id="turnName">—</span>
-          </div>
-          <div class="mini" id="turnMeta">—</div>
+      <div class="status">
+        <div class="pill">
+          <span class="pill-dot" id="turnDot" aria-hidden="true"></span>
+          <span class="pill-text" id="turnName">—</span>
         </div>
+        <div class="mini" id="turnMeta">—</div>
 
-        <div class="dicebox" aria-label="Kocka">
-          <div class="diceface" id="diceFace">—</div>
-          <div class="dicelabel" id="diceLabel">—</div>
+        <div class="netrow">
+          <span class="tag">Realtime</span>
+          <span class="pill2" id="netState">init</span>
         </div>
       </div>
 
       <div class="panel-actions">
         <button class="btn primary" id="btnStartMain" type="button" hidden disabled>Start</button>
-        <button class="btn primary" id="btnRoll" type="button" disabled>Dobás</button>
+        <button class="btn" id="btnRoll" type="button" disabled>Dobás (backup)</button>
         <button class="btn" id="btnSkip" type="button" disabled>Passz</button>
       </div>
 
@@ -64,122 +67,4 @@
 
       <div class="logwrap">
         <div class="logtitle">Napló</div>
-        <div class="log" id="log" aria-live="polite"></div>
-      </div>
-
-      <footer class="footer">
-        <span>Tipp: külön telókról nyissátok meg az oldalt, Join ugyanazzal a kóddal.</span>
-      </footer>
-    </section>
-  </main>
-
-  <!-- Lobby modal -->
-  <div class="modal show" id="lobbyModal" aria-hidden="false">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="lobbyTitle">
-      <div class="modal-head">
-        <div class="modal-title" id="lobbyTitle">Online szoba</div>
-        <div class="modal-right">
-          <span class="pill2" id="netState">init</span>
-        </div>
-      </div>
-
-      <div class="modal-body">
-        <div class="grid2">
-          <div class="field">
-            <label for="yourName">Neved</label>
-            <input id="yourName" type="text" placeholder="pl. Tesó" maxlength="18" />
-          </div>
-
-          <div class="field">
-            <label for="roomCode">Szobakód</label>
-            <input id="roomCode" type="text" placeholder="pl. K8F2QZ" maxlength="10" />
-            <div class="help">Ha van kód: Join. Ha nincs: Create.</div>
-          </div>
-        </div>
-
-        <div class="grid2">
-          <div class="field">
-            <label for="playerCount">Játékosok száma</label>
-            <select id="playerCount">
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4" selected>4</option>
-            </select>
-            <div class="help">Create-nél számít (host állítja).</div>
-          </div>
-
-          <div class="field">
-            <label>Opciók</label>
-            <label class="check"><input type="checkbox" id="optExtraTurnOnSix" checked /> <span>6-osnál még egy dobás</span></label>
-            <label class="check"><input type="checkbox" id="optAutoMove" checked /> <span>Autó-lépés (1 opció)</span></label>
-          </div>
-        </div>
-
-        <div class="lobbyState" id="lobbyState" hidden>
-          <div class="row">
-            <div class="roompill big">
-              <span class="tag">Kód</span>
-              <span class="code" id="roomCodeBig">—</span>
-            </div>
-            <button class="btn ghost" id="btnCopyBig" type="button">Másol</button>
-          </div>
-
-          <div class="players" id="playersList"></div>
-          <div class="help">Host: Start a jobb alsó gombbal (vagy fent a panelen). Minimum 2 fő.</div>
-        </div>
-      </div>
-
-      <div class="modal-actions split">
-        <button class="btn" id="btnJoin" type="button">Join</button>
-        <button class="btn primary" id="btnCreate" type="button">Create</button>
-        <button class="btn primary" id="btnStart" type="button" hidden>Start</button>
-      </div>
-
-      <div class="modal-footnote">
-        <span class="muted2">Realtime: Supabase • Frontend: GitHub Pages</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Rules modal -->
-  <div class="modal" id="rulesModal" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
-      <div class="modal-head">
-        <div class="modal-title" id="rulesTitle">Szabályok</div>
-        <button class="btn ghost icon" id="btnCloseRules" type="button" aria-label="Bezárás">✕</button>
-      </div>
-      <div class="modal-body prose">
-        <ul>
-          <li>2–4 játékos, mind külön teló/gép, ugyanazzal a szobakóddal join.</li>
-          <li>6-os kell a bábu kihozásához a start mezőre.</li>
-          <li>Körödben: dobás → kiemelt (pulzáló) bábu választás.</li>
-          <li>Ha 1 ellenfél áll a célmezőn: vissza haza (a start mezők védettek).</li>
-          <li>2 azonos bábu egy mezőn blokkol (oda nem lehet érkezni).</li>
-          <li>Cél: mind a 4 bábut bevinni a hazafutó soron a középig.</li>
-        </ul>
-        <p class="muted">Ha a realtime néha megmakacsolja magát, a polling fallback akkor is frissít.</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Win modal -->
-  <div class="modal" id="winModal" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="winTitle">
-      <div class="modal-head">
-        <div class="modal-title" id="winTitle">Vége</div>
-        <button class="btn ghost icon" id="btnCloseWin" type="button" aria-label="Bezárás">✕</button>
-      </div>
-      <div class="modal-body prose">
-        <p id="winText">—</p>
-      </div>
-      <div class="modal-actions">
-        <button class="btn primary" id="btnBackLobby" type="button">Vissza a lobbyba</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Supabase (CDN) -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-  <script src="app.js"></script>
-</body>
-</html>
+        <d
