@@ -1,8 +1,11 @@
-/* Ki nevet a végén (Ludo) – ONLINE szobás multiplayer + lépés animáció
+/* Ki nevet a végén (Ludo) – ONLINE szobás multiplayer + anim
    Frontend: GitHub Pages
-   State + realtime: Supabase
+   Realtime/state: Supabase
 
-   TEENDŐ: írd be a SUPABASE_URL és SUPABASE_ANON_KEY értékeket.
+   FONTOS:
+   - SUPABASE_URL = Data API / Project URL
+   - SUPABASE_ANON_KEY = Publishable key (sb_publishable_...)
+   - Secret key-t SOHA ne tedd ide.
 */
 (() => {
   "use strict";
@@ -10,7 +13,7 @@
   // =======================
   // 1) SUPABASE CONFIG
   // =======================
-  const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co";
+  const SUPABASE_URL = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
@@ -22,17 +25,16 @@
   // =======================
   // 2) HELPERS
   // =======================
-  function escapeHtml(s) {
-    return (s ?? "").replace(/[&<>"']/g, (m) => ({
-      "&":"&amp;",
-      "<":"&lt;",
-      ">":"&gt;",
-      '"':"&quot;",
-      "'":"&#039;",
-    }[m]));
-  }
   function cellKey(x, y) { return `${x},${y}`; }
   function delay(ms){ return new Promise(res => setTimeout(res, ms)); }
+  function nowIso(){ return new Date().toISOString(); }
+  function deepClone(o){ return JSON.parse(JSON.stringify(o)); }
+
+  function escapeHtml(s) {
+    return (s ?? "").replace(/[&<>"']/g, (m) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;",
+    }[m]));
+  }
 
   function getCSS(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -44,17 +46,15 @@
     const b = parseInt(h.slice(4,6), 16);
     return `rgba(${r},${g},${b},${a})`;
   }
-  function nowIso(){ return new Date().toISOString(); }
-  function deepClone(o){ return JSON.parse(JSON.stringify(o)); }
 
+  function normalizeCode(s){
+    return (s||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10);
+  }
   function randomCode(len=6){
     const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let out = "";
     for(let i=0;i<len;i++) out += chars[Math.floor(Math.random()*chars.length)];
     return out;
-  }
-  function normalizeCode(s){
-    return (s||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10);
   }
   function rollDie(){
     try{
@@ -115,7 +115,6 @@
     Object.keys(START_INDEX).map(id => [id, (START_INDEX[id] + PATH.length - 1) % PATH.length])
   );
 
-  // Start mezők védettek (safe)
   const SAFE_CELLS = new Set(Object.values(START_INDEX).map(i => cellKey(PATH[i][0], PATH[i][1])));
 
   const HOME_STRETCH_MAP = (() => {
@@ -142,6 +141,7 @@
   const elBoard = $("#board");
   const elDiceFace = $("#diceFace");
   const elDiceLabel = $("#diceLabel");
+  const elBtnStartMain = $("#btnStartMain");
   const elBtnRoll = $("#btnRoll");
   const elBtnSkip = $("#btnSkip");
   const elHint = $("#hint");
@@ -194,14 +194,33 @@
     channel: null,
   };
 
-  // authoritative state from DB:
-  // { status:"lobby"|"playing"|"ended", hostId, settings, players[], pieces[], turnIdx, phase, die, movablePieceIds, sixStreak, winnerId, log[] }
   let state = null;
   let version = 0;
 
-  // Animation gating
+  // animation gating
   let animLock = false;
   let pendingSnap = null;
+
+  // polling fallback (PC fix)
+  let pollTimer = null;
+
+  function startPolling(){
+    if (pollTimer) return;
+    pollTimer = setInterval(async () => {
+      if (!room.code) return;
+      if (animLock) return;
+      try{
+        const rr = await fetchRoom(room.code);
+        if (rr && rr.version > version) onRemoteSnapshot(rr.state, rr.version);
+      }catch{}
+    }, 1200);
+  }
+  function stopPolling(){
+    if (pollTimer){
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
 
   // Board SVG
   let svg = null;
@@ -213,7 +232,7 @@
   // =======================
   async function requireSupabase(){
     if (!sb){
-      setHint("Supabase nincs beállítva. Add meg a kulcsokat app.js-ben.");
+      setHint("Supabase nincs beállítva (URL + Publishable key).");
       netState.textContent = "no-supabase";
       netState.style.color = "var(--red)";
       throw new Error("Supabase not configured");
@@ -248,7 +267,6 @@
   async function subscribeRoom(code){
     const ch = sb.channel(`room:${code}`);
 
-    // state updates from DB
     ch.on("postgres_changes",
       { event:"UPDATE", schema:"public", table:"rooms", filter:`code=eq.${code}` },
       (payload) => {
@@ -258,15 +276,9 @@
       }
     );
 
-    // broadcast move (for step animation)
     ch.on("broadcast", { event:"move" }, (payload) => {
       const p = payload?.payload;
       if (p) onRemoteMove(p);
-    });
-
-    ch.on("broadcast", { event:"sys" }, (payload) => {
-      const msg = payload?.payload?.msg;
-      if (msg) logLine(msg, true);
     });
 
     await ch.subscribe((status) => {
@@ -307,7 +319,6 @@
   }
 
   async function onRemoteMove(payload){
-    // payload: {toVersion, anim, state}
     const toV = payload.toVersion;
     if (toV !== undefined && toV <= version) return;
 
@@ -340,8 +351,6 @@
       const upd = await updateRoomState(newState, version);
       applySnapshot(upd.state, upd.version);
 
-      if (extras?.sysMsg) await broadcast("sys", { msg: extras.sysMsg });
-
       if (extras?.anim){
         await broadcast("move", {
           toVersion: upd.version,
@@ -355,12 +364,12 @@
         const rr = await fetchRoom(room.code);
         if (rr) applySnapshot(rr.state, rr.version);
       } catch {}
-      logLine("Ütközés: valaki közben lépett. Próbáld újra.", true);
+      logLine("Ütközés: valaki közben lépett / frissült. Próbáld újra.", true);
     }
   }
 
   // =======================
-  // 7) GAME STATE BUILDERS
+  // 7) GAME LOGIC
   // =======================
   function selectColors(count){
     if (count === 2) return [COLORS[0], COLORS[2]];            // green + red
@@ -378,7 +387,7 @@
       for (let i=0;i<4;i++){
         pieces.push({
           id: `${c.id}-${i}`,
-          playerId: c.id, // piece belongs to colorId
+          playerId: c.id,
           n: i,
           state: "home",
           trackIndex: null,
@@ -426,7 +435,6 @@
     return map;
   }
 
-  // blokkolás: ha a célmezőn 2 ellenfél bábu van (dupla), oda nem érkezhetsz
   function isTrackLandingAllowed(s, colorId, coord){
     const occ = getTrackOccupancy(s);
     const key = cellKey(coord[0], coord[1]);
@@ -445,7 +453,6 @@
 
     if (piece.state === "finished") return null;
 
-    // home -> start on 6
     if (piece.state === "home"){
       if (die !== 6) return null;
       const ti = START_INDEX[colorId];
@@ -453,26 +460,22 @@
       return { state:"track", trackIndex:ti, stretchIndex:null };
     }
 
-    // track
     if (piece.state === "track"){
       const cur = piece.trackIndex;
       const entry = HOME_ENTRY_INDEX[colorId];
       const distToEntry = (entry - cur + PATH.length) % PATH.length;
 
-      // marad a külső körön
       if (die <= distToEntry){
         const ni = (cur + die) % PATH.length;
         if (!isTrackLandingAllowed(s, colorId, PATH[ni])) return null;
         return { state:"track", trackIndex:ni, stretchIndex:null };
       }
 
-      // belép a hazafutóba
       const into = die - distToEntry - 1;
       if (into < 0 || into > 5) return null;
       return { state:"homeStretch", trackIndex:null, stretchIndex:into };
     }
 
-    // home stretch
     if (piece.state === "homeStretch"){
       const ni = piece.stretchIndex + die;
       if (ni > 6) return null;
@@ -502,7 +505,6 @@
 
     const actor = currentPlayer(s);
 
-    // move
     piece.state = mv.state;
     piece.trackIndex = mv.trackIndex ?? null;
     piece.stretchIndex = mv.stretchIndex ?? null;
@@ -537,8 +539,7 @@
       s.log.unshift(`${actor.name} beért! (${actor.finished}/4)`);
     }
 
-    if (s.log.length > 60) s.log.length = 60;
-
+    if (s.log.length > 80) s.log.length = 80;
     return s;
   }
 
@@ -601,29 +602,46 @@
     }
   }
 
+  function pieceToPos(s, piece){
+    const c = COLORS.find(x => x.id === piece.playerId);
+
+    if (piece.state === "home"){
+      const [x,y] = c.homeSlots[piece.n];
+      return { x:x+0.5, y:y+0.5 };
+    }
+    if (piece.state === "track"){
+      const [x,y] = PATH[piece.trackIndex];
+      return { x:x+0.5, y:y+0.5 };
+    }
+    if (piece.state === "homeStretch"){
+      const [x,y] = c.homeStretch[piece.stretchIndex];
+      return { x:x+0.5, y:y+0.5 };
+    }
+    if (piece.state === "finished"){
+      return { x: c.finishSpot[0], y: c.finishSpot[1] };
+    }
+    return { x:7.5, y:7.5 };
+  }
+
   function buildAnim(prev, piece, mv){
     const steps = [];
     const captures = [];
 
     const cxy = (coord) => ({ x: coord[0] + 0.5, y: coord[1] + 0.5 });
 
-    // start position
     steps.push(pieceToPos(prev, piece));
 
     const colorId = piece.playerId;
     const c = COLORS.find(x => x.id === colorId);
+    const die = prev.die;
 
-    // home -> start
     if (piece.state === "home" && mv.state === "track"){
       steps.push(cxy(PATH[mv.trackIndex]));
     }
-
-    // track moves
     else if (piece.state === "track"){
       const cur = piece.trackIndex;
       const entry = HOME_ENTRY_INDEX[colorId];
       const distToEntry = (entry - cur + PATH.length) % PATH.length;
-      const die = prev.die;
 
       if (mv.state === "track"){
         for (let i=1;i<=die;i++){
@@ -631,7 +649,6 @@
           steps.push(cxy(PATH[idx]));
         }
       } else if (mv.state === "homeStretch"){
-        // to entry+1 then into stretch
         for (let i=1;i<=distToEntry+1;i++){
           const idx = (cur + i) % PATH.length;
           steps.push(cxy(PATH[idx]));
@@ -641,8 +658,6 @@
         }
       }
     }
-
-    // home stretch -> finish
     else if (piece.state === "homeStretch"){
       const start = piece.stretchIndex;
       const end = mv.state === "finished" ? 6 : mv.stretchIndex;
@@ -655,7 +670,7 @@
       }
     }
 
-    // capture check from prev if landing on track
+    // capture check (landing on track)
     if ((piece.state === "home" && mv.state === "track") || (piece.state === "track" && mv.state === "track")){
       const landing = mv.trackIndex;
       const coord = PATH[landing];
@@ -694,7 +709,7 @@
       s2.winnerId = cpAfter.id;
       s2.log.unshift(`${cpAfter.name} nyert!`);
       s2.updatedAt = nowIso();
-      await pushState(s2, { anim, sysMsg: `${cpAfter.name} NYERT.` });
+      await pushState(s2, { anim });
       return;
     }
 
@@ -752,11 +767,11 @@
 
   function renderLobbyState(){
     if (!state || !room.code) return;
-    if (lobbyModal.classList.contains("show")) lobbyState.hidden = false;
 
     playersList.innerHTML = "";
-    const need = state.settings?.playerCount || 4;
-    const chosen = selectColors(need).map(c => c.id);
+
+    // itt csak azt mutatjuk, amit a szoba eredetileg beállított
+    const chosen = selectColors(state.settings?.playerCount || 4).map(c => c.id);
 
     for (const cid of chosen){
       const pl = state.players.find(p => p.colorId === cid);
@@ -820,7 +835,6 @@
     });
     init.log.unshift(`${name} (host) belépett: ${COLORS.find(c=>c.id===myColor).label}.`);
 
-    // insert with collision retry
     let inserted = null;
     for (let i=0;i<4;i++){
       try{
@@ -835,11 +849,13 @@
     room.code = inserted.code;
 
     await subscribeRoom(room.code);
-    applySnapshot(inserted.state, inserted.version);
+    startPolling();
 
+    applySnapshot(inserted.state, inserted.version);
     showLobbyState();
+
     closeLobby();
-    setHint("Szoba kész. Küldd a kódot, aztán Start.");
+    setHint("Szoba kész. Küldd a kódot, aztán Start (min. 2 fő).");
   }
 
   async function joinRoomFlow(){
@@ -859,6 +875,8 @@
     room.meId = crypto.randomUUID();
 
     await subscribeRoom(room.code);
+    startPolling();
+
     applySnapshot(rr.state, rr.version);
 
     if (state.status !== "lobby"){
@@ -869,8 +887,7 @@
       return;
     }
 
-    const need = state.settings.playerCount;
-    const chosen = selectColors(need).map(c => c.id);
+    const chosen = selectColors(state.settings.playerCount).map(c => c.id);
     const used = new Set(state.players.map(p => p.colorId));
     const free = chosen.find(cid => !used.has(cid));
 
@@ -896,37 +913,51 @@
     s2.log.unshift(`${name} belépett: ${COLORS.find(c=>c.id===free).label}.`);
     s2.updatedAt = nowIso();
 
-    await pushState(s2, { sysMsg: `${name} joined.` });
+    await pushState(s2, null);
 
     showLobbyState();
     closeLobby();
-    setHint("Bent vagy. Várjátok meg a Startot.");
+    setHint("Bent vagy. Várjátok a Startot (min. 2 fő).");
   }
 
+  // START FIX: minimum 2 főtől indul, és csak az aktív színek bábuival
   async function startGameFlow(){
     if (!state || state.status !== "lobby") return;
     if (room.meId !== state.hostId) return;
 
-    const need = state.settings.playerCount;
-    if (state.players.length < need) return setHint(`Még nincs meg a létszám (${state.players.length}/${need}).`);
+    if ((state.players?.length || 0) < 2){
+      return setHint(`Minimum 2 játékos kell (${state.players.length}/2).`);
+    }
 
     const s2 = deepClone(state);
+
+    // aktív színek = akik ténylegesen bent vannak
+    const activeColors = new Set(s2.players.map(p => p.colorId));
+
+    // dobjuk a nem használt színek bábuit (különben ott állnának feleslegesen)
+    s2.pieces = s2.pieces.filter(pc => activeColors.has(pc.playerId));
+
+    // lockoljuk a playerCount-ot a tényleges induló létszámra
+    s2.settings.playerCount = s2.players.length;
+
     s2.status = "playing";
     s2.turnIdx = 0;
     s2.phase = "needRoll";
     s2.die = null;
     s2.movablePieceIds = [];
     s2.sixStreak = 0;
-    s2.log.unshift("Játék indult.");
+    s2.log.unshift(`Játék indult (${s2.players.length} fő).`);
     s2.updatedAt = nowIso();
 
-    await pushState(s2, { sysMsg: "Game started." });
+    await pushState(s2, null);
     closeLobby();
     setHint("Mehet. Dobj.");
   }
 
   async function leaveRoomFlow(){
     if (!room.code) return;
+
+    stopPolling();
 
     try{
       if (room.channel) await room.channel.unsubscribe();
@@ -946,7 +977,7 @@
   }
 
   // =======================
-  // 11) UI: log / dice / score / turn
+  // 11) UI
   // =======================
   function setDice(face, label){
     elDiceFace.textContent = face;
@@ -963,20 +994,39 @@
   }
 
   function refreshControls(){
-    const playing = state && state.status === "playing";
-    elBtnRoll.disabled = !(playing && canRoll());
-    elBtnSkip.disabled = !(playing && isMyTurn());
+    const inRoom = !!room.code && !!state;
+    const isLobby = inRoom && state.status === "lobby";
+    const isPlaying = inRoom && state.status === "playing";
+    const isHost = isLobby && room.meId === state.hostId;
+
+    // Start gomb fő UI-n
+    if (elBtnStartMain){
+      elBtnStartMain.hidden = !isLobby;
+      elBtnStartMain.disabled = !(isHost && (state.players?.length || 0) >= 2);
+    }
+
+    // Start a modalban is
+    btnStart.hidden = !(isHost && isLobby);
+    btnStart.disabled = !(isHost && isLobby && (state?.players?.length || 0) >= 2);
+
+    elBtnRoll.disabled = !(isPlaying && canRoll());
+    elBtnSkip.disabled = !(isPlaying && isMyTurn());
     btnLeave.disabled = !room.code;
 
     if (!state){
       setDice("—","—");
       return;
     }
+
     if (state.status === "lobby"){
-      setDice("—","Várakozás");
+      setDice("—", `Lobby • ${state.players.length} játékos • Host indít (min. 2)`);
       return;
     }
-    setDice(state.die ? String(state.die) : "—", state.phase === "needRoll" ? "Dobásra vár" : "Válassz bábut");
+
+    setDice(
+      state.die ? String(state.die) : "—",
+      state.phase === "needRoll" ? "Dobásra vár" : "Válassz bábut"
+    );
   }
 
   function renderScore(){
@@ -1010,7 +1060,6 @@
       card.appendChild(meta);
       elScore.appendChild(card);
     }
-
     if (pls.length === 3){
       const pad = document.createElement("div");
       pad.className = "card";
@@ -1028,10 +1077,9 @@
     }
 
     if (state.status === "lobby"){
-      const need = state.settings.playerCount;
       elTurnName.textContent = "Lobby";
       elTurnDot.style.background = "rgba(255,255,255,.25)";
-      elTurnMeta.textContent = `Létszám: ${state.players.length}/${need} • Host indít`;
+      elTurnMeta.textContent = `Bent: ${state.players.length} • Start: min. 2 fő (host)`;
       return;
     }
 
@@ -1206,70 +1254,14 @@
     }
   }
 
-  function stackOffsets(n){
-    const o = 0.18;
-    if (n === 2) return [{dx:-o,dy:0},{dx:o,dy:0}];
-    if (n === 3) return [{dx:-o,dy:-o/2},{dx:o,dy:-o/2},{dx:0,dy:o}];
-    return [{dx:-o,dy:-o},{dx:o,dy:-o},{dx:-o,dy:o},{dx:o,dy:o}];
-  }
-
-  function pieceToPos(s, piece){
-    const c = COLORS.find(x => x.id === piece.playerId);
-
-    if (piece.state === "home"){
-      const [x,y] = c.homeSlots[piece.n];
-      return { x:x+0.5, y:y+0.5 };
-    }
-    if (piece.state === "track"){
-      const [x,y] = PATH[piece.trackIndex];
-      return { x:x+0.5, y:y+0.5 };
-    }
-    if (piece.state === "homeStretch"){
-      const [x,y] = c.homeStretch[piece.stretchIndex];
-      return { x:x+0.5, y:y+0.5 };
-    }
-    if (piece.state === "finished"){
-      const pl = s.players.find(p => p.colorId === piece.playerId);
-      const i = Math.max(0, (pl?.finished || 1) - 1);
-      const off = stackOffsets(4)[i];
-      return { x: c.finishSpot[0] + off.dx*0.7, y: c.finishSpot[1] + off.dy*0.7 };
-    }
-    return { x:7.5, y:7.5 };
-  }
-
   function renderPieces(){
     if (!state) return;
-
-    const positions = new Map();
-    const buckets = new Map();
-
-    for (const piece of state.pieces){
-      const base = pieceToPos(state, piece);
-      positions.set(piece.id, base);
-
-      const key = piece.state === "finished" ? `fin:${piece.playerId}`
-        : piece.state === "home" ? `home:${piece.playerId}:${piece.n}`
-        : `cell:${Math.floor(base.x)},${Math.floor(base.y)}`;
-
-      if (!buckets.has(key)) buckets.set(key, []);
-      buckets.get(key).push(piece.id);
-    }
-
-    for (const ids of buckets.values()){
-      if (ids.length <= 1) continue;
-      const offs = stackOffsets(Math.min(4, ids.length));
-      ids.forEach((id, idx) => {
-        const p = positions.get(id);
-        const o = offs[idx % offs.length];
-        positions.set(id, { x:p.x + o.dx, y:p.y + o.dy });
-      });
-    }
 
     for (const piece of state.pieces){
       const g = pawnEls.get(piece.id);
       if (!g) continue;
 
-      const pos = positions.get(piece.id);
+      const pos = pieceToPos(state, piece);
       g.setAttribute("transform", `translate(${pos.x}, ${pos.y})`);
 
       const movable = (state.status === "playing" && state.phase === "needPick" && isMyTurn() && (state.movablePieceIds||[]).includes(piece.id));
@@ -1350,9 +1342,11 @@
     await pushState(s2, null);
   });
 
+  elBtnStartMain.addEventListener("click", () => startGameFlow().catch(() => setHint("Start hiba.")));
+  btnStart.addEventListener("click", () => startGameFlow().catch(() => setHint("Start hiba.")));
+
   btnJoin.addEventListener("click", () => joinRoomFlow().catch(()=>setHint("Join hiba.")));
   btnCreate.addEventListener("click", () => createRoomFlow().catch(()=>setHint("Create hiba.")));
-  btnStart.addEventListener("click", () => startGameFlow().catch(()=>setHint("Start hiba.")));
 
   btnLeave.addEventListener("click", () => leaveRoomFlow());
 
