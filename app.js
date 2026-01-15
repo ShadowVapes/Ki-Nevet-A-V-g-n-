@@ -4,8 +4,8 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-  const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -74,22 +74,22 @@
 
   const COLORS = [
     { id:"green",  label:"Zöld",  hex:getCSS("--green"),  startCoord:[1,6],
-      homeSlots:[[2,2],[3,2],[2,3],[3,3]],
+      homeSlots:[[2,2],[4,2],[2,4],[4,4]],
       homeStretch:[[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],
       finishSpot:[6.75, 6.75],
     },
     { id:"yellow", label:"Sárga", hex:getCSS("--yellow"), startCoord:[8,1],
-      homeSlots:[[11,2],[12,2],[11,3],[12,3]],
+      homeSlots:[[10,2],[12,2],[10,4],[12,4]],
       homeStretch:[[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],
       finishSpot:[8.25, 6.75],
     },
     { id:"red",    label:"Piros", hex:getCSS("--red"),   startCoord:[13,8],
-      homeSlots:[[11,11],[12,11],[11,12],[12,12]],
+      homeSlots:[[10,10],[12,10],[10,12],[12,12]],
       homeStretch:[[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],
       finishSpot:[8.25, 8.25],
     },
     { id:"blue",   label:"Kék",   hex:getCSS("--blue"),  startCoord:[6,13],
-      homeSlots:[[2,11],[3,11],[2,12],[3,12]],
+      homeSlots:[[2,10],[4,10],[2,12],[4,12]],
       homeStretch:[[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]],
       finishSpot:[6.75, 8.25],
     },
@@ -107,12 +107,12 @@
   // Safe: start mezők (mindenkinek safe)
   const SAFE_START_CELLS = new Set(Object.values(START_INDEX).map(i => cellKey(PATH[i][0], PATH[i][1])));
 
-  // Védett: csak a saját start mező
+  // Saját színű védett track szegmens (játékos kérésére): start után 5 mező
   const COLORED_TRACK = new Map(); // colorId -> Set(trackIndex)
   for (const c of COLORS){
     const si = START_INDEX[c.id];
     const set = new Set();
-    set.add(si); // csak a start
+    for (let k=0;k<6;k++) set.add((si + k) % PATH.length); // start + 5
     COLORED_TRACK.set(c.id, set);
   }
   const isProtectedTrackForColor = (colorId, trackIndex) => {
@@ -155,12 +155,7 @@
   const elScore = $("#score");
   const elLog = $("#log");
 
-  
-  const elUnderDot = $("#underDot");
-  const elUnderName = $("#underName");
-  const elUiDice = $("#uiDice");
-  const elUiDiceFace = $("#uiDiceFace");
-const netState = $("#netState");
+  const netState = $("#netState");
   const netState2 = $("#netState2");
 
   const lobbyModal = $("#lobbyModal");
@@ -352,7 +347,6 @@ const netState = $("#netState");
       animLock = true;
       try{
         await animateMove(payload.anim);
-        await delay(2000);
       } finally {
         animLock = false;
       }
@@ -380,20 +374,7 @@ const netState = $("#netState");
   async function pushState(newState, extras){
     try{
       const upd = await updateRoomState(newState, version);
-
-      if (extras?.moveAnim){
-        // helyben is animáljunk (ne teleportáljon), majd 2s szünet
-        animLock = true;
-        try{
-          await animateMove(extras.moveAnim);
-          await delay(2000);
-        } finally {
-          animLock = false;
-        }
-        applySnapshot(upd.state, upd.version);
-      } else {
-        applySnapshot(upd.state, upd.version);
-      }
+      applySnapshot(upd.state, upd.version);
 
       if (extras?.moveAnim){
         await broadcast("move", {
@@ -590,10 +571,10 @@ const netState = $("#netState");
       const coord = PATH[piece.trackIndex];
       const key = cellKey(coord[0], coord[1]);
 
-      // csak az a bábu védett, aki a SAJÁT start mezőjén áll
-      const owner = startOwnerByCell(key); // "green/yellow/red/blue" vagy null
+      // safe start mezők (mindenkinek safe)
+      const safeStart = SAFE_START_CELLS.has(key);
 
-      {
+      if (!safeStart){
         const victims = s.pieces.filter(pp =>
           pp.id !== piece.id &&
           pp.state === "track" &&
@@ -607,8 +588,8 @@ const netState = $("#netState");
           const knocked = [];
 
           for (const v of victims){
-            const protectedByOwnStart = (owner && owner === v.playerId);
-            if (protectedByOwnStart){
+            const protectedByOwnColor = isProtectedTrackForColor(v.playerId, v.trackIndex);
+            if (protectedByOwnColor){
               survivors.push(v);
             }else{
               knocked.push(v);
@@ -624,7 +605,7 @@ const netState = $("#netState");
           if (knocked.length){
             s.log.unshift(`${actor.name} ütött: ${knocked.length} bábu haza.`);
           } else if (survivors.length){
-            s.log.unshift(`${actor.name} próbált ütni, de védett start mező.`);
+            s.log.unshift(`${actor.name} próbált ütni, de védett mező (saját szín).`);
           }
         }
       }
@@ -682,30 +663,22 @@ const netState = $("#netState");
   }
 
   function setDiceFace(n){
-    const t = String(n ?? "—");
-    if (diceFaceText) diceFaceText.textContent = t;
-    if (elUiDiceFace) elUiDiceFace.textContent = t;
+    if (!diceFaceText) return;
+    diceFaceText.textContent = String(n ?? "—");
   }
 
   async function diceRollAnim(finalDie){
-    // 2s “pörgetés”: folyamatosan váltakozik a szám, utána megáll a végleges értéken
-    if (!diceG && !elUiDice) return;
+    if (!diceG) return;
 
-    diceG?.classList.add("diceRolling");
-
-    const start = performance.now();
-    let last = 0;
-    while ((performance.now() - start) < 2000){
-      const now = performance.now();
-      if (now - last >= 70){
-        last = now;
-        setDiceFace((Math.floor(Math.random()*6) + 1));
-      }
-      await delay(16);
+    diceG.classList.add("diceRolling");
+    const spins = 10;
+    for (let i=0;i<spins;i++){
+      setDiceFace((i % 6) + 1);
+      await delay(32);
     }
-
     setDiceFace(finalDie);
-    diceG?.classList.remove("diceRolling");
+    await delay(80);
+    diceG.classList.remove("diceRolling");
   }
 
   // =======================
@@ -803,24 +776,16 @@ const netState = $("#netState");
       const coord = PATH[landing];
       const key = cellKey(coord[0], coord[1]);
 
-      {
+      if (!SAFE_START_CELLS.has(key)){
         const victims = prev.pieces.filter(pp =>
           pp.id !== piece.id &&
           pp.state === "track" &&
           pp.trackIndex === landing &&
           pp.playerId !== piece.playerId
         );
-
-        if (victims.length){
-          // csak az a bábu védett, aki a SAJÁT start mezőjén áll
-          const coord2 = PATH[landing];
-          const owner = startOwnerByCell(cellKey(coord2[0], coord2[1])); // "green/yellow/red/blue" vagy null
-
-          for (const v of victims){
-            const protectedByOwnStart = (owner && owner === v.playerId);
-            if (!protectedByOwnStart){
-              captures.push(v.id);
-            }
+        for (const v of victims){
+          if (!isProtectedTrackForColor(v.playerId, v.trackIndex)){
+            captures.push(v.id);
           }
         }
       }
@@ -1170,13 +1135,6 @@ const netState = $("#netState");
     const cp = currentPlayer(state);
     elTurnName.textContent = cp ? cp.name : "—";
     elTurnDot.style.background = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.25)";
-
-    if (elUnderName) elUnderName.textContent = cp ? cp.name : "—";
-    if (elUnderDot) elUnderDot.style.background = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.25)";
-    if (elUiDice){
-      const col = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
-      elUiDice.style.borderColor = col;
-    }
     const my = (cp && cp.id === room.meId) ? " (te)" : "";
     const lr = state.lastRoll ? ` • Utolsó dobás: ${state.lastRoll.byName}=${state.lastRoll.die}` : "";
     elTurnMeta.textContent = `Kör: ${state.turnIdx+1}/${state.players.length}${my}${lr}`;
@@ -1216,16 +1174,13 @@ const netState = $("#netState");
       elBoardHelp.textContent = "A játék a kockán keresztül megy. Lobbyban Startol a host.";
     } else {
       elBoardHelp.textContent = canRoll()
-        ? "Te jössz: dobj a kockával."
+        ? "Te jössz: katt a kockára dobáshoz."
         : "Várj a körödre…";
     }
 
     // dice enabled/disabled vizuál
     if (diceG){
       diceG.classList.toggle("diceDisabled", !(isPlaying && (canRoll() || (isMyTurn() && state.phase === "needPick"))));
-      if (elUiDice){
-        elUiDice.disabled = !(isPlaying && (canRoll() || (isMyTurn() && state.phase === "needPick")));
-      }
     }
   }
 
@@ -1296,9 +1251,10 @@ const netState = $("#netState");
   }
 
   function getCellInfo(x,y){
-    const bg = "#22283a";
-    const pathBg = "#2a334a";
-    const centerBg = "#273049";
+    // DESIGN ONLY: világos, "klasszik" ludo tábla (nem játékszabály)
+    const bg = "#f6f7fb";
+    const pathBg = "#ffffff";
+    const centerBg = "#ffffff";
 
     const inGreenHome = (x<=5 && y<=5);
     const inYellowHome = (x>=9 && y<=5);
@@ -1311,19 +1267,20 @@ const netState = $("#netState");
     const hs = HOME_STRETCH_MAP.get(k);
 
     if (inCenter) return { fill:centerBg, cls:"center" };
-    if (inGreenHome) return { fill: withAlpha(getCSS("--green"), 0.16), cls:"" };
-    if (inYellowHome) return { fill: withAlpha(getCSS("--yellow"), 0.16), cls:"" };
-    if (inRedHome) return { fill: withAlpha(getCSS("--red"), 0.16), cls:"" };
-    if (inBlueHome) return { fill: withAlpha(getCSS("--blue"), 0.16), cls:"" };
+    // nagy színblokkok, mint a klasszik táblán
+    if (inGreenHome) return { fill: withAlpha(getCSS("--green"), 0.92), cls:"home" };
+    if (inYellowHome) return { fill: withAlpha(getCSS("--yellow"), 0.92), cls:"home" };
+    if (inRedHome) return { fill: withAlpha(getCSS("--red"), 0.92), cls:"home" };
+    if (inBlueHome) return { fill: withAlpha(getCSS("--blue"), 0.92), cls:"home" };
 
-    if (hs) return { fill: withAlpha(colorHex(hs.id), 0.30), cls:"path" };
+    if (hs) return { fill: withAlpha(colorHex(hs.id), 0.78), cls:"path" };
 
     if (isPath){
-      // saját színű track szegmens színezése (játékosabb + védett mező)
+      // saját színű track szegmens színezése (csak design)
       const idx = PATH.findIndex(p => p[0]===x && p[1]===y);
       for (const c of COLORS){
         if (COLORED_TRACK.get(c.id)?.has(idx)){
-          return { fill: withAlpha(colorHex(c.id), 0.24), cls:"path" };
+          return { fill: withAlpha(colorHex(c.id), 0.36), cls:"path" };
         }
       }
       return { fill: pathBg, cls:"path" };
@@ -1594,14 +1551,7 @@ const netState = $("#netState");
   // =======================
   // RENDER ALL
   // =======================
-  
-  function applyViewRotation(){
-    if (!svg) return;
-    const map = { blue:0, red:90, yellow:180, green:270 };
-    const deg = map[room.myColor] ?? 0;
-    svg.style.transform = `rotate(${deg}deg)`;
-  }
-function renderAll(){
+  function renderAll(){
     buildBoardIfNeeded();
     renderTurn();
     renderScore();
@@ -1618,40 +1568,7 @@ function renderAll(){
   // =======================
   // WIRES
   // =======================
-  // Mobilon: első érintésre próbál fullscreen + portrait lock
-  const wantMobileFs = matchMedia("(max-width: 680px)").matches;
-  if (wantMobileFs){
-    let fsTried = false;
-    document.addEventListener("pointerdown", async () => {
-      if (fsTried) return;
-      fsTried = true;
-
-      try{
-        if (!document.fullscreenElement && document.documentElement.requestFullscreen){
-          await document.documentElement.requestFullscreen();
-        }
-      } catch {}
-
-      try{
-        if (screen.orientation && screen.orientation.lock){
-          await screen.orientation.lock("portrait");
-        }
-      } catch {}
-    }, { once:false, passive:true });
-  }
-
   elBtnRoll.addEventListener("click", actRoll);
-  elUiDice?.addEventListener("click", async () => {
-    // lobbyban a host tud Startolni a kockáról is
-    if (state?.status === "lobby"){
-      const isHost = (room.meId === state.hostId);
-      if (isHost && (state.players?.length || 0) >= 2){
-        await startGameFlow();
-      }
-      return;
-    }
-    if (canRoll()) await actRoll();
-  });
   elBtnSkip.addEventListener("click", async () => {
     if (!state || state.status !== "playing" || !isMyTurn()) return;
     const s2 = nextTurnInState(state, false);

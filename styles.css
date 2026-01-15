@@ -21,11 +21,11 @@ body{
   margin:0;
   font-family: ui-rounded, system-ui, -apple-system, Segoe UI, Roboto, Arial;
   color:var(--text);
+  /* DESIGN ONLY: "mobil ludo" érzet – kék, pöttyös háttér */
   background:
-    radial-gradient(900px 520px at 12% 10%, rgba(255,85,121,.35), transparent 62%),
-    radial-gradient(900px 520px at 85% 18%, rgba(77,177,255,.32), transparent 62%),
-    radial-gradient(900px 520px at 55% 95%, rgba(55,221,122,.26), transparent 62%),
-    linear-gradient(180deg, #1b1f2a, #141826 70%, #111523);
+    radial-gradient(circle at 18px 18px, rgba(255,255,255,.06) 2px, transparent 3px) 0 0/54px 54px,
+    radial-gradient(circle at 45px 45px, rgba(255,255,255,.045) 2px, transparent 3px) 0 0/54px 54px,
+    linear-gradient(180deg, #1a2d5a, #0e2146);
   overflow-x:hidden;
 }
 
@@ -62,28 +62,25 @@ body{
 }
 
 .board-card,.panel{
-  border:2px solid rgba(255,255,255,.12);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.06));
-  box-shadow: var(--shadow);
+  border:2px solid rgba(255,255,255,.18);
+  border-radius: 18px;
+  background: rgba(0,0,0,.08);
+  box-shadow: 0 14px 38px rgba(0,0,0,.35);
   overflow:hidden;
 }
 
 .board-shell{
   padding:12px;
   display:flex; align-items:center; justify-content:center;
-  background:
-    radial-gradient(500px 320px at 60% 40%, rgba(255,255,255,.08), transparent 60%);
+  background: transparent;
 }
 .board{
   width: min(680px, 100%);
   aspect-ratio: 1/1;
   border-radius: 16px;
   overflow:hidden;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.12));
-  border:2px solid rgba(255,255,255,.14);
+  background: #ffffff;
+  border:3px solid rgba(0,0,0,.55);
   position:relative;
 }
 .board-help{
@@ -249,6 +246,54 @@ select, input[type="text"]{
 .grid2{display:grid; grid-template-columns: 1fr 1fr; gap:10px}
 @media (max-width:520px){ .grid2{grid-template-columns: 1fr;} }
 
+/* ==========================
+   DESIGN ONLY: mobil layout
+   tábla fent, "HUD" lent
+   ========================== */
+@media (max-width: 820px){
+  .topbar{position:static; background:transparent; border-bottom:none; backdrop-filter:none}
+  .brandtxt .s{display:none}
+
+  .layout{
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 12px;
+    padding-bottom: 120px; /* hely a fix HUD-nak */
+    max-width: 920px;
+  }
+
+  .board-card{background: transparent; box-shadow:none; border-color: rgba(255,255,255,.14)}
+  .board-help{display:none}
+
+  .panel{
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 25;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 20px;
+    background: rgba(10,18,40,.62);
+    backdrop-filter: blur(10px);
+  }
+
+  /* a HUD-ban csak: aktuális játékos + dobás + passz (de telón nem kérted) */
+  .status{gap:6px}
+  .mini, .netrow, .hint, .roombar, .score, .logwrap{display:none !important}
+
+  .pill{padding:10px 12px}
+  .pill-text{max-width: 46vw}
+
+  .panel-actions{flex: 1; display:flex; gap:10px}
+  .btn{border-radius: 18px; padding: 14px 14px}
+
+  /* TELÓ: ne látszódjon backup roll + passz */
+  #btnRoll, #btnSkip{display:none !important}
+}
+
 .check{
   display:flex; gap:10px; align-items:center;
   color: rgba(255,255,255,.88);
@@ -277,11 +322,12 @@ select, input[type="text"]{
 .prose ul{margin:0; padding-left:18px}
 .prose li{margin:8px 0}
 
-/* Board SVG */
+/* Board SVG – világos, rácsos */
 .board svg{width:100%; height:100%; display:block}
-.cell{stroke: rgba(255,255,255,.10); stroke-width:.06}
-.cell.path{stroke: rgba(255,255,255,.18)}
-.cell.center{stroke: rgba(255,255,255,.22)}
+.cell{stroke: rgba(0,0,0,.42); stroke-width:.08}
+.cell.path{stroke: rgba(0,0,0,.45)}
+.cell.center{stroke: rgba(0,0,0,.55)}
+.cell.home{stroke: rgba(0,0,0,.55)}
 
 /* Pawn + hop */
 .pawn{cursor:pointer; filter: drop-shadow(0 8px 12px rgba(0,0,0,.35))}
@@ -319,23 +365,24 @@ select, input[type="text"]{
 /* Center dice */
 .diceRoot{cursor:pointer}
 .diceBox{
-  fill: rgba(255,255,255,.12);
-  stroke-width:.18;
+  fill: rgba(255,255,255,.92);
+  stroke: rgba(0,0,0,.55);
+  stroke-width:.16;
 }
 .diceFaceText{
   font-weight:1000;
   font-size:1.25px;
-  fill: rgba(255,255,255,.95);
+  fill: rgba(0,0,0,.88);
 }
 .diceSubText{
   font-weight:1000;
   font-size:.42px;
-  fill: rgba(255,255,255,.85);
+  fill: rgba(0,0,0,.68);
 }
 .diceHintText{
   font-weight:1000;
   font-size:.34px;
-  fill: rgba(255,255,255,.72);
+  fill: rgba(0,0,0,.55);
 }
 .diceDisabled{opacity:.55; cursor:not-allowed}
 
@@ -346,7 +393,7 @@ select, input[type="text"]{
   70%{transform: translate(.10px,.10px) rotate(-2deg)}
   100%{transform: translate(0,0) rotate(0deg)}
 }
-.diceRolling{animation:none}
+.diceRolling{animation: shake 420ms ease-in-out 1}
 
 @media (max-width:980px){
   .layout{grid-template-columns: 1fr;}
@@ -355,60 +402,3 @@ select, input[type="text"]{
   .layout{padding:12px}
   .brandtxt .s{display:none}
 }
-
-
-/* === Mobile UX tweaks (requested) === */
-@media (max-width: 680px){
-  #btnRoll, #btnSkip{display:none !important;}
-}
-
-/* board rotation per player */
-.board svg{
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-/* Under-board bar (dice + current player) */
-.underbar{
-  margin-top: 10px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-}
-.turnpill{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:10px 12px;
-  border-radius: 18px;
-  border:2px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.06);
-  min-width: 0;
-}
-.turnpill .dot{
-  width:12px;height:12px;border-radius:999px;
-  box-shadow:0 0 0 6px rgba(255,255,255,.10);
-  flex:0 0 auto;
-}
-.turnpill .txt{
-  font-weight:1000;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-}
-
-.dicebtn{
-  width:66px; height:56px;
-  border-radius: 18px;
-  border:2px solid rgba(255,255,255,.35);
-  background: rgba(255,255,255,.06);
-  color: var(--text);
-  font-weight:1100;
-  font-size:24px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  user-select:none;
-  -webkit-tap-highlight-color: transparent;
-}
-.dicebtn:active{transform: translateY(1px);}
-.dicebtn[disabled]{opacity:.55; filter:saturate(.75); transform:none;}
