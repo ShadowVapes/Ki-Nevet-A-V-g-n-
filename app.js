@@ -4,8 +4,8 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -74,22 +74,22 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   const COLORS = [
     { id:"green",  label:"Zöld",  hex:getCSS("--green"),  startCoord:[1,6],
-      homeSlots:[[1,1],[4,1],[1,4],[4,4]],
+      homeSlots:[[2,2],[3,2],[2,3],[3,3]],
       homeStretch:[[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],
       finishSpot:[6.75, 6.75],
     },
     { id:"yellow", label:"Sárga", hex:getCSS("--yellow"), startCoord:[8,1],
-      homeSlots:[[10,1],[13,1],[10,4],[13,4]],
+      homeSlots:[[11,2],[12,2],[11,3],[12,3]],
       homeStretch:[[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],
       finishSpot:[8.25, 6.75],
     },
     { id:"red",    label:"Piros", hex:getCSS("--red"),   startCoord:[13,8],
-      homeSlots:[[10,10],[13,10],[10,13],[13,13]],
+      homeSlots:[[11,11],[12,11],[11,12],[12,12]],
       homeStretch:[[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],
       finishSpot:[8.25, 8.25],
     },
     { id:"blue",   label:"Kék",   hex:getCSS("--blue"),  startCoord:[6,13],
-      homeSlots:[[1,10],[4,10],[1,13],[4,13]],
+      homeSlots:[[2,11],[3,11],[2,12],[3,12]],
       homeStretch:[[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]],
       finishSpot:[6.75, 8.25],
     },
@@ -107,12 +107,12 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // Safe: start mezők (mindenkinek safe)
   const SAFE_START_CELLS = new Set(Object.values(START_INDEX).map(i => cellKey(PATH[i][0], PATH[i][1])));
 
-  // Saját színű védett track szegmens (játékos kérésére): start után 5 mező
+  // Védett: csak a saját start mező
   const COLORED_TRACK = new Map(); // colorId -> Set(trackIndex)
   for (const c of COLORS){
     const si = START_INDEX[c.id];
     const set = new Set();
-    for (let k=0;k<6;k++) set.add((si + k) % PATH.length); // start + 5
+    set.add(si); // csak a start
     COLORED_TRACK.set(c.id, set);
   }
   const isProtectedTrackForColor = (colorId, trackIndex) => {
@@ -142,7 +142,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // =======================
   const elBoard = $("#board");
   const elBoardHelp = $("#boardHelp");
-  const DEFAULT_BOARD_HELP = elBoardHelp ? elBoardHelp.textContent : "";
 
   const elBtnStartMain = $("#btnStartMain");
   const elBtnRoll = $("#btnRoll");
@@ -156,7 +155,12 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   const elScore = $("#score");
   const elLog = $("#log");
 
-  const netState = $("#netState");
+  
+  const elUnderDot = $("#underDot");
+  const elUnderName = $("#underName");
+  const elUiDice = $("#uiDice");
+  const elUiDiceFace = $("#uiDiceFace");
+const netState = $("#netState");
   const netState2 = $("#netState2");
 
   const lobbyModal = $("#lobbyModal");
@@ -208,11 +212,17 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   let animLock = false;
   let pendingSnap = null;
 
-  // view / UI timing
-  let viewRotDeg = 0;
-  let uiHoldTurnUntil = 0;
-  let uiHoldTurnColor = null;
-  let diceRollingUntil = 0;
+  // roll anim gating (targets only after roll anim finishes)
+  let rollAnimUntil = 0;
+
+  // view rotation degrees (for counter-rotating dice + pawns)
+  let viewDeg = 0;
+
+  // animation timing
+  const ROLL_ANIM_MS = 1000;
+  const MOVE_STEP_MS = 190;
+  const POST_MOVE_WAIT_MS = 1000;
+
 
   // polling fallback
   let pollTimer = null;
@@ -332,6 +342,21 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     applySnapshot(newState, newVer);
   }
 
+
+  function updateMobileHostCode(){
+    const box = document.getElementById('mHostCode');
+    const txt = document.getElementById('mHostCodeText');
+    if (!box || !txt) return;
+    const isMobile = matchMedia('(max-width: 680px)').matches;
+    const isHost = (room.meId && state && state.hostId && room.meId === state.hostId);
+    if (isMobile && room.code && isHost){
+      txt.textContent = room.code;
+      box.hidden = false;
+    } else {
+      box.hidden = true;
+    }
+  }
+
   function applySnapshot(newState, newVer){
     state = newState;
     version = newVer;
@@ -339,6 +364,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     renderAll();
     refreshControls();
     renderLobbyState();
+
+    updateMobileHostCode();
 
     if (state?.status === "ended"){
       const w = state.players?.find(p => p.id === state.winnerId);
@@ -354,6 +381,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       animLock = true;
       try{
         await animateMove(payload.anim);
+        await delay(POST_MOVE_WAIT_MS);
       } finally {
         animLock = false;
       }
@@ -369,35 +397,32 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   }
 
   async function onRemoteRoll(payload){
-    // vizuális dobás anim mindenkinél ugyanarra az időpontra ütemezve
-    const die = payload?.die;
-    if (!die) return;
-
-    const startAt = payload?.at || Date.now();
-    const dur = payload?.dur || 1000;
-    const wait = Math.max(0, startAt - Date.now());
-
-    // dobás közben ne legyen céljelölés
-    diceRollingUntil = startAt + dur;
-
-    // dobás színe: aki dobott (turn szín)
-    if (payload?.colorId){
-      uiHoldTurnColor = payload.colorId;
-      uiHoldTurnUntil = diceRollingUntil; // legalább dobás végéig
+    // csak vizuális anim + hint, a state úgyis jön snapshotból is
+    if (payload?.die){
+      await diceRollAnim(payload.die, payload.at);
     }
-
-    if (payload?.byName){
-      toast(`${payload.byName} dobott: ${die}`);
+    if (payload?.byName && payload?.die){
+      toast(`${payload.byName} dobott: ${payload.die}`);
     }
-
-    if (wait) await delay(wait);
-    await diceRollAnim(die, dur);
   }
 
   async function pushState(newState, extras){
     try{
       const upd = await updateRoomState(newState, version);
-      applySnapshot(upd.state, upd.version);
+
+      if (extras?.moveAnim){
+        // helyben is animáljunk (ne teleportáljon), majd 2s szünet
+        animLock = true;
+        try{
+          await animateMove(extras.moveAnim);
+          await delay(POST_MOVE_WAIT_MS);
+        } finally {
+          animLock = false;
+        }
+        applySnapshot(upd.state, upd.version);
+      } else {
+        applySnapshot(upd.state, upd.version);
+      }
 
       if (extras?.moveAnim){
         await broadcast("move", {
@@ -412,8 +437,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
           die: extras.rollAnim.die,
           byName: extras.rollAnim.byName,
           colorId: extras.rollAnim.colorId,
-          at: extras.rollAnim.at,
-          dur: extras.rollAnim.dur
+          at: extras.rollAnim.at
         });
       }
     } catch (e){
@@ -536,14 +560,16 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       return { state:"homeStretch", trackIndex:null, stretchIndex:into };
     }
 
-    // homeStretch
+    // homeStretch (bounce)
     if (piece.state === "homeStretch"){
       const ni = piece.stretchIndex + die;
       if (ni === 6) return { state:"finished", trackIndex:null, stretchIndex:null };
       if (ni < 6) return { state:"homeStretch", trackIndex:null, stretchIndex:ni };
-      // bounce back from goal (only exact roll can finish)
-      const bounced = 12 - ni;
-      return { state:"homeStretch", trackIndex:null, stretchIndex:bounced };
+
+      // túldobás: előre a célig (6), majd vissza
+      const over = ni - 6;
+      const back = 6 - over;
+      return { state:"homeStretch", trackIndex:null, stretchIndex:back };
     }
 
     return null;
@@ -559,20 +585,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       if (computeLegalMove(s, piece, die)) out.push(piece.id);
     }
     return out;
-  }
-
-
-  function updateViewRotation(){
-    if (!svg) return;
-    const map = { blue:0, red:90, yellow:180, green:-90 };
-    viewRotDeg = map[room.myColor] ?? 0;
-    svg.style.transform = `rotate(${viewRotDeg}deg)`;
-    svg.style.transformOrigin = "50% 50%";
-  }
-
-  function rotatePoint(p){
-    // a tábla CSS-ben forog, a koordináták maradnak; ez csak kompatibilitás
-    return p;
   }
 
   function pieceToPos(s, piece){
@@ -612,10 +624,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const coord = PATH[piece.trackIndex];
       const key = cellKey(coord[0], coord[1]);
 
-      // safe start mezők (mindenkinek safe)
-      const safeStart = SAFE_START_CELLS.has(key);
+      // csak az a bábu védett, aki a SAJÁT start mezőjén áll
+      const owner = startOwnerByCell(key); // "green/yellow/red/blue" vagy null
 
-      if (!safeStart){
+      {
         const victims = s.pieces.filter(pp =>
           pp.id !== piece.id &&
           pp.state === "track" &&
@@ -629,8 +641,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
           const knocked = [];
 
           for (const v of victims){
-            const protectedByOwnColor = isProtectedTrackForColor(v.playerId, v.trackIndex);
-            if (protectedByOwnColor){
+            const protectedByOwnStart = (owner && owner === v.playerId);
+            if (protectedByOwnStart){
               survivors.push(v);
             }else{
               knocked.push(v);
@@ -646,7 +658,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
           if (knocked.length){
             s.log.unshift(`${actor.name} ütött: ${knocked.length} bábu haza.`);
           } else if (survivors.length){
-            s.log.unshift(`${actor.name} próbált ütni, de védett mező (saját szín).`);
+            s.log.unshift(`${actor.name} próbált ütni, de védett start mező.`);
           }
         }
       }
@@ -703,47 +715,38 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     while (elLog.children.length > 45) elLog.removeChild(elLog.lastChild);
   }
 
-
-  function isMobile(){
-    return window.matchMedia && window.matchMedia('(max-width:520px)').matches;
-  }
-
-  function updateMobileOverlay(){
-    if (!elBoardHelp) return;
-    if (isMobile()){
-      if (room.code && state && room.meId === state.hostId){
-        elBoardHelp.textContent = `Szoba: ${room.code}`;
-        elBoardHelp.classList.add('show');
-      } else {
-        elBoardHelp.textContent = '';
-        elBoardHelp.classList.remove('show');
-      }
-    } else {
-      elBoardHelp.textContent = DEFAULT_BOARD_HELP;
-      elBoardHelp.classList.remove('show');
-    }
-  }
-
   function setDiceFace(n){
-    if (!diceFaceText) return;
-    diceFaceText.textContent = String(n ?? "—");
+    const t = String(n ?? "—");
+    if (diceFaceText) diceFaceText.textContent = t;
+    if (elUiDiceFace) elUiDiceFace.textContent = t;
   }
 
-  async function diceRollAnim(finalDie, durationMs = 1000){
-    if (!diceG) return;
+  async function diceRollAnim(finalDie, startAtMs){
+    // 1s "pörgetés": mindenkinél ugyanakkor indul (startAtMs alapján), utána megáll
+    if (!diceG && !elUiDice) return;
 
-    diceG.classList.add("diceRolling");
+    const startAt = startAtMs ?? Date.now();
+    const endAt = startAt + ROLL_ANIM_MS;
+    rollAnimUntil = Math.max(rollAnimUntil, endAt);
 
-    const interval = 80;
-    const spins = Math.max(1, Math.floor(durationMs / interval));
-    for (let i=0;i<spins;i++){
-      setDiceFace((i % 6) + 1);
-      await delay(interval);
+    const wait = startAt - Date.now();
+    if (wait > 0) await delay(wait);
+
+    diceG?.classList.add("diceRolling");
+
+    const start = performance.now();
+    let last = 0;
+    while ((performance.now() - start) < ROLL_ANIM_MS){
+      const now = performance.now();
+      if (now - last >= 70){
+        last = now;
+        setDiceFace((Math.floor(Math.random()*6) + 1));
+      }
+      await delay(16);
     }
+
     setDiceFace(finalDie);
-    // pici settle
-    await delay(40);
-    diceG.classList.remove("diceRolling");
+    diceG?.classList.remove("diceRolling");
   }
 
   // =======================
@@ -753,14 +756,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     if (!canRoll()) return;
 
     const die = rollDie();
-    const dur = 1000;
-    const startAt = Date.now() + 120; // kis buffer, hogy minden kliens egyszerre inditsa
 
-    // dobás közben ne legyen céljelölés
-    diceRollingUntil = startAt + dur;
-
-    // helyben is ugyanarra az időpontra ütemezünk
-    setTimeout(() => { diceRollAnim(die, dur); }, Math.max(0, startAt - Date.now()));
+    // időzített dobás anim: mindenkinél egyszerre
+    const startAt = Date.now() + 140;
+    diceRollAnim(die, startAt);
 
     const s = deepClone(state);
     const cp = currentPlayer(s);
@@ -769,8 +768,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     s.phase = "needPick";
     s.updatedAt = nowIso();
 
-    // lastRoll megmarad
-    s.lastRoll = { byId: cp.id, byName: cp.name, colorId: cp.colorId, die, at: Date.now() };
+    // lastRoll megmarad + időbélyeg a szinkron animhoz
+    s.lastRoll = { byId: cp.id, byName: cp.name, colorId: cp.colorId, die, at: startAt };
 
     s.log.unshift(`${cp.name} dobott: ${die}.`);
     s.movablePieceIds = updateMovablePieceIds(s);
@@ -778,15 +777,15 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     if (s.movablePieceIds.length === 0){
       s.log.unshift(`${cp.name}: nincs lépés.`);
       const s2 = nextTurnInState(s, false);
-      await pushState(s2, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, at: startAt, dur: dur } });
+      await pushState(s2, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, at: startAt } });
       return;
     }
 
-    await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, at: startAt, dur: dur } });
+    await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, at: startAt } });
 
     // auto-move
     if (s.settings.autoMove && s.movablePieceIds.length === 1){
-      await delay(Math.max(0, diceRollingUntil - Date.now()) + 20);
+      await delay(ROLL_ANIM_MS + 40);
       if (state && state.phase === "needPick" && isMyTurn() && state.movablePieceIds.length === 1){
         await actPick(state.movablePieceIds[0]);
       }
@@ -830,29 +829,24 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     }
     else if (piece.state === "homeStretch"){
       const start = piece.stretchIndex;
-      const raw = start + die;
-
-      // ha túlmegy a célon: előre a célba, majd vissza (bounce)
-      if (raw > 6){
-        // előre a finish-ig
+      if (mv.state === "finished"){
         for (let i=start+1;i<=6;i++){
-          if (i === 6){
-            steps.push({ x:c.finishSpot[0], y:c.finishSpot[1] });
-          } else {
-            steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
-          }
-        }
-        // vissza a bounced indexig
-        const bounced = 12 - raw;
-        for (let i=5;i>=bounced;i--){
-          steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
+          if (i === 6) steps.push({ x:c.finishSpot[0], y:c.finishSpot[1] });
+          else steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
         }
       } else {
-        const end = mv.state === "finished" ? 6 : mv.stretchIndex;
-        for (let i=start+1;i<=end;i++){
-          if (i === 6){
-            steps.push({ x:c.finishSpot[0], y:c.finishSpot[1] });
-          } else {
+        const target = start + die;
+        if (target <= 6){
+          for (let i=start+1;i<=mv.stretchIndex;i++){
+            steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
+          }
+        } else {
+          // bounce: előre 6-ig, aztán vissza mv.stretchIndex-ig
+          for (let i=start+1;i<=6;i++){
+            if (i === 6) steps.push({ x:c.finishSpot[0], y:c.finishSpot[1] });
+            else steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
+          }
+          for (let i=5;i>=mv.stretchIndex;i--){
             steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
           }
         }
@@ -865,16 +859,24 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const coord = PATH[landing];
       const key = cellKey(coord[0], coord[1]);
 
-      if (!SAFE_START_CELLS.has(key)){
+      {
         const victims = prev.pieces.filter(pp =>
           pp.id !== piece.id &&
           pp.state === "track" &&
           pp.trackIndex === landing &&
           pp.playerId !== piece.playerId
         );
-        for (const v of victims){
-          if (!isProtectedTrackForColor(v.playerId, v.trackIndex)){
-            captures.push(v.id);
+
+        if (victims.length){
+          // csak az a bábu védett, aki a SAJÁT start mezőjén áll
+          const coord2 = PATH[landing];
+          const owner = startOwnerByCell(cellKey(coord2[0], coord2[1])); // "green/yellow/red/blue" vagy null
+
+          for (const v of victims){
+            const protectedByOwnStart = (owner && owner === v.playerId);
+            if (!protectedByOwnStart){
+              captures.push(v.id);
+            }
           }
         }
       }
@@ -889,45 +891,75 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const piece = state.pieces.find(p => p.id === pieceId);
     if (!piece) return;
 
-    const mv = computeLegalMove(state, piece, state.die);
+    const die = state.die;
+    const mv = computeLegalMove(state, piece, die);
     if (!mv) return;
 
+    const cpBefore = currentPlayer(state);
+    const plBefore = state.players.find(p => p.id === cpBefore.id);
+    const finishedBefore = (plBefore?.finished || 0);
+
     const anim = buildMoveAnim(state, piece, mv);
-    let s2 = applyMoveToState(state, pieceId, mv);
+    let sMoved = applyMoveToState(state, pieceId, mv);
 
     // win?
-    const cpAfter = currentPlayer(s2);
-    const plAfter = s2.players.find(p => p.id === cpAfter.id);
-    if (plAfter && (plAfter.finished || 0) >= 4){
-      s2.status = "ended";
-      s2.phase = "ended";
-      s2.winnerId = cpAfter.id;
-      s2.log.unshift(`${cpAfter.name} nyert!`);
-      s2.updatedAt = nowIso();
-      await pushState(s2, { moveAnim: anim });
+    const cpAfter = currentPlayer(sMoved);
+    const plAfter = sMoved.players.find(p => p.id === cpAfter.id);
+    const finishedAfter = (plAfter?.finished || 0);
+    const finishedNow = finishedAfter > finishedBefore;
+
+    if (plAfter && finishedAfter >= 4){
+      sMoved.status = "ended";
+      sMoved.phase = "ended";
+      sMoved.winnerId = cpAfter.id;
+      sMoved.log.unshift(`${cpAfter.name} nyert!`);
+      sMoved.updatedAt = nowIso();
+      await pushState(sMoved, { moveAnim: anim });
       return;
     }
 
-    // extra turn: 6 dobás vagy beérés (nem stackelődik, csak 1 extra)
-    const finishedNow = (mv.state === "finished");
-    const sixExtra = (s2.settings.extraTurnOnSix && state.die === 6);
-    const extra = finishedNow || sixExtra;
+    // extra turn: 6 vagy beérés (nem stackelődik duplán)
+    const extra = ((sMoved.settings.extraTurnOnSix && die === 6) || finishedNow);
 
+    // 1) küldjük a lépést (turn még marad ugyanaz, amíg az anim + 1s lemegy)
+    const sPost = deepClone(sMoved);
+    sPost.die = null;
+    sPost.movablePieceIds = [];
+    sPost.phase = "postMove";
+    sPost.updatedAt = nowIso();
+
+    // ha extra, ugyanaz a játékos jön majd
     if (extra){
-      if (finishedNow && sixExtra){
-        s2.log.unshift(`${cpAfter.name} beért 6-al: extra dobás.`);
-      } else if (finishedNow){
-        s2.log.unshift(`${cpAfter.name} beért: extra dobás.`);
-      } else {
-        s2.log.unshift(`${cpAfter.name} 6-os! Még egy dobás.`);
-      }
-      s2 = nextTurnInState(s2, true);
-    } else {
-      s2 = nextTurnInState(s2, false);
+      sPost.log.unshift(`${cpAfter.name} még egyszer jön.`);
     }
 
-    await pushState(s2, { moveAnim: anim });
+    await pushState(sPost, { moveAnim: anim });
+
+    // 2) ha NEM extra: anim vége után +1s, aztán következő játékos
+    if (!extra){
+      await delay(POST_MOVE_WAIT_MS);
+      if (!state || state.status !== "playing") return;
+      // ha közben már nem ugyanaz a kör (desync), ne erőltesd
+      const cur = currentPlayer(state);
+      if (!cur || cur.id !== cpAfter.id) return;
+
+      const sNext = nextTurnInState(state, false);
+      await pushState(sNext, null);
+    } else {
+      // extra esetben: anim + 1s után dobható újra ugyanaz a játékos
+      await delay(POST_MOVE_WAIT_MS);
+      if (!state || state.status !== "playing") return;
+      const cur = currentPlayer(state);
+      if (!cur || cur.id !== cpAfter.id) return;
+      if (state.phase === "postMove"){
+        const sReady = deepClone(state);
+        sReady.phase = "needRoll";
+        sReady.updatedAt = nowIso();
+        await pushState(sReady, null);
+      }
+    }
   }
+
 
   // =======================
   // LOBBY
@@ -1227,6 +1259,13 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const cp = currentPlayer(state);
     elTurnName.textContent = cp ? cp.name : "—";
     elTurnDot.style.background = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.25)";
+
+    if (elUnderName) elUnderName.textContent = cp ? cp.name : "—";
+    if (elUnderDot) elUnderDot.style.background = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.25)";
+    if (elUiDice){
+      const col = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
+      elUiDice.style.borderColor = col;
+    }
     const my = (cp && cp.id === room.meId) ? " (te)" : "";
     const lr = state.lastRoll ? ` • Utolsó dobás: ${state.lastRoll.byName}=${state.lastRoll.die}` : "";
     elTurnMeta.textContent = `Kör: ${state.turnIdx+1}/${state.players.length}${my}${lr}`;
@@ -1266,13 +1305,16 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       elBoardHelp.textContent = "A játék a kockán keresztül megy. Lobbyban Startol a host.";
     } else {
       elBoardHelp.textContent = canRoll()
-        ? "Te jössz: katt a kockára dobáshoz."
+        ? "Te jössz: dobj a kockával."
         : "Várj a körödre…";
     }
 
     // dice enabled/disabled vizuál
     if (diceG){
       diceG.classList.toggle("diceDisabled", !(isPlaying && (canRoll() || (isMyTurn() && state.phase === "needPick"))));
+      if (elUiDice){
+        elUiDice.disabled = !(isPlaying && (canRoll() || (isMyTurn() && state.phase === "needPick")));
+      }
     }
   }
 
@@ -1383,7 +1425,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     diceG = document.createElementNS(svg.namespaceURI,"g");
     diceG.setAttribute("class","diceRoot");
     // közép környéke, kicsit feljebb, hogy a szöveg alatt elférjen
-    diceG.setAttribute("transform","translate(7.5 7.05)");
+    diceG.setAttribute("transform",`translate(7.5 7.05) rotate(${-viewDeg})`);
     svg.appendChild(diceG);
 
     diceRect = document.createElementNS(svg.namespaceURI,"rect");
@@ -1496,105 +1538,60 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     }
   }
 
-function renderCornerLabels(){
-  if (!gLabels) return;
-  gLabels.innerHTML = "";
-  if (!state) return;
+  function renderPieces(){
+    if (!state) return;
 
-  const qmap = quadrantColorMap();
-  const quads = [
-    { q:'TL', x:0.25, y:0.25, w:5.5, h:0.8, anchor:'start' },
-    { q:'TR', x:9.25, y:0.25, w:5.5, h:0.8, anchor:'end' },
-    { q:'BL', x:0.25, y:13.95, w:5.5, h:0.8, anchor:'start' },
-    { q:'BR', x:9.25, y:13.95, w:5.5, h:0.8, anchor:'end' },
-  ];
+    // stack: ugyanazon mezőn több bábu -> kicsi eltolások
+    const buckets = new Map();
+    const basePos = new Map();
 
-  for (const it of quads){
-    const cid = qmap[it.q];
-    const pl = (state.players||[]).find(p => p.colorId === cid);
-    const name = pl ? pl.name : "—";
-
-    const r = document.createElementNS(svg.namespaceURI,'rect');
-    r.setAttribute('x', String(it.x));
-    r.setAttribute('y', String(it.y));
-    r.setAttribute('width', String(it.w));
-    r.setAttribute('height', String(it.h));
-    r.setAttribute('rx', '0.18');
-    r.setAttribute('fill', withAlpha(colorHex(cid), 0.55));
-    r.setAttribute('stroke', 'rgba(0,0,0,.35)');
-    r.setAttribute('stroke-width', '0.06');
-    gLabels.appendChild(r);
-
-    const t = document.createElementNS(svg.namespaceURI,'text');
-    t.setAttribute('y', String(it.y + 0.58));
-    t.setAttribute('fill', 'rgba(255,255,255,.95)');
-    t.setAttribute('font-size', '0.45');
-    t.setAttribute('font-weight', '1000');
-    t.setAttribute('font-family', 'system-ui, -apple-system, Segoe UI, Roboto, Arial');
-    if (it.anchor === 'start'){
-      t.setAttribute('x', String(it.x + 0.35));
-      t.setAttribute('text-anchor', 'start');
-    } else {
-      t.setAttribute('x', String(it.x + it.w - 0.35));
-      t.setAttribute('text-anchor', 'end');
+    for (const piece of state.pieces){
+      const pos = pieceToPos(state, piece);
+      const key = `${pos.x.toFixed(2)}:${pos.y.toFixed(2)}`;
+      basePos.set(piece.id, pos);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(piece.id);
     }
-    t.textContent = name;
-    gLabels.appendChild(t);
-  }
-}
 
+    const offsetsFor = (n)=>{
+      if (n<=1) return [{dx:0,dy:0}];
+      if (n==2) return [{dx:-0.14,dy:0},{dx:0.14,dy:0}];
+      if (n==3) return [{dx:-0.14,dy:0.10},{dx:0.14,dy:0.10},{dx:0,dy:-0.16}];
+      // 4+
+      return [{dx:-0.14,dy:-0.14},{dx:0.14,dy:-0.14},{dx:-0.14,dy:0.14},{dx:0.14,dy:0.14}];
+    };
 
-function renderPieces(){
-  if (!state) return;
+    for (const [key, ids] of buckets.entries()){
+      const offs = offsetsFor(ids.length);
+      ids.forEach((id, idx)=>{
+        const g = pawnEls.get(id);
+        if (!g) return;
+        const pos = basePos.get(id);
+        const o = offs[Math.min(idx, offs.length-1)];
+        const x = pos.x + (o?.dx||0);
+        const y = pos.y + (o?.dy||0);
 
-  const groups = new Map();
-  const posById = new Map();
+        // tábla forog, de a bábu álljon egyenesen
+        g.setAttribute("transform", `translate(${x}, ${y}) rotate(${-viewDeg})`);
 
-  for (const piece of state.pieces){
-    const pos = pieceToPos(state, piece);
-    posById.set(piece.id, pos);
-    const k = `${piece.state}:${Math.round(pos.x*10)},${Math.round(pos.y*10)}`;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(piece);
-  }
-
-  const layouts = {
-    1: { s:1.00, o:[[0,0]] },
-    2: { s:0.92, o:[[-0.18,0],[0.18,0]] },
-    3: { s:0.88, o:[[-0.18,-0.14],[0.18,-0.14],[0,0.18]] },
-    4: { s:0.85, o:[[-0.18,-0.18],[0.18,-0.18],[-0.18,0.18],[0.18,0.18]] },
-  };
-
-  for (const arr of groups.values()){
-    const lay = layouts[Math.min(arr.length,4)];
-    for (let i=0;i<arr.length;i++){
-      const piece = arr[i];
-      const g = pawnEls.get(piece.id);
-      if (!g) continue;
-
-      const base = posById.get(piece.id);
-      const rp = rotatePoint(base);
-
-      const oi = i % lay.o.length;
-      const [dx,dy] = lay.o[oi];
-      g.setAttribute('transform', `translate(${(rp.x+dx).toFixed(3)}, ${(rp.y+dy).toFixed(3)}) rotate(${-viewRotDeg}) scale(${lay.s})`);
-
-      const movable = (state.status === 'playing' && state.phase === 'needPick' && isMyTurn() && (state.movablePieceIds||[]).includes(piece.id) && Date.now() >= diceRollingUntil);
-      g.classList.toggle('movable', movable);
-      g.style.opacity = piece.state === 'finished' ? '0.85' : '1';
+        const movable = (state.status === "playing" && state.phase === "needPick" && isMyTurn() && (state.movablePieceIds||[]).includes(id) && Date.now() >= rollAnimUntil);
+        g.classList.toggle("movable", movable);
+        const piece = state.pieces.find(p=>p.id===id);
+        g.style.opacity = piece?.state === "finished" ? "0.85" : "1";
+      });
     }
   }
-}
 
-function renderTargets(){
+  function renderTargets(){
     if (!gTargets) return;
-    // dobás anim alatt ne jelezzünk célmezőt
-    if (Date.now() < diceRollingUntil) { gTargets.innerHTML = ""; return; }
     gTargets.innerHTML = "";
 
     if (!state || state.status !== "playing") return;
     if (!isMyTurn()) return;
     if (state.phase !== "needPick") return;
+
+    // dobás anim alatt ne mutasson céljelölést
+    if (Date.now() < rollAnimUntil) return;
 
     const cp = currentPlayer(state);
     const die = state.die;
@@ -1636,12 +1633,9 @@ function renderTargets(){
 
   function renderDiceOverlay(){
     if (!diceG || !diceRect) return;
-    // a tábla forog, a kocka maradjon "álló"
-    diceG.setAttribute("transform", `translate(7.5 7.05) rotate(${-viewRotDeg})`);
 
     if (!state || state.status === "lobby"){
       setDiceFace("—");
-      try{ diceG.classList.remove('dicePulse'); }catch{}
       dicePlayerText.textContent = state?.status === "lobby" ? "Lobby (host start)" : "—";
       diceHintText.textContent = state?.status === "lobby" ? "Katt: Start (host)" : "";
       diceRect.setAttribute("stroke", "rgba(255,255,255,.35)");
@@ -1652,8 +1646,8 @@ function renderTargets(){
     const c = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
     diceRect.setAttribute("stroke", withAlpha(c, 0.95));
 
-    // pulse the border when waiting for next roll
-    try{ diceG.classList.toggle('dicePulse', state.status === "playing" && state.phase === "needRoll"); }catch{}
+    // pulzáljon annak a játékosnak, aki dobhat
+    diceG.classList.toggle("turnPulse", state.status === "playing" && state.phase === "needRoll");
 
     // face: ha van aktuális die, azt mutatja, különben lastRoll
     if (state.die){
@@ -1662,7 +1656,6 @@ function renderTargets(){
       setDiceFace(state.lastRoll.die);
     } else {
       setDiceFace("—");
-      try{ diceG.classList.remove('dicePulse'); }catch{}
     }
 
     dicePlayerText.textContent = cp ? `${cp.name} jön` : "—";
@@ -1678,32 +1671,33 @@ function renderTargets(){
   // =======================
   // ANIMATION (hop step-by-step)
   // =======================
-
-async function animateMove(anim){
+  async function animateMove(anim){
     const g = pawnEls.get(anim.pieceId);
     if (!g) return;
 
-    const stepDelay = 190; // lassabb, követhetőbb
     for (let i=0;i<anim.steps.length;i++){
       const p = anim.steps[i];
-      g.setAttribute("transform", `translate(${p.x}, ${p.y})`);
-      await delay(i === 0 ? 90 : stepDelay);
+      g.setAttribute("transform", `translate(${p.x}, ${p.y}) rotate(${-viewDeg})`);
+      // hop
+      // nincs "ugrálás" anim
+      await delay(i == 0 ? 40 : MOVE_STEP_MS);
     }
 
     if (anim.captures?.length){
       for (const vid of anim.captures){
         const vg = pawnEls.get(vid);
         if (!vg) continue;
-        vg.style.transition = "opacity 160ms ease";
+        vg.style.transition = "opacity 120ms ease";
         vg.style.opacity = "0.15";
-        await delay(160);
+        await delay(120);
         vg.style.opacity = "1";
         vg.style.transition = "";
       }
     }
   }
 
-// MODALS
+  // =======================
+  // MODALS
   // =======================
   function openRules(){ rulesModal.classList.add("show"); rulesModal.setAttribute("aria-hidden","false"); }
   function closeRules(){ rulesModal.classList.remove("show"); rulesModal.setAttribute("aria-hidden","true"); }
@@ -1721,12 +1715,20 @@ async function animateMove(anim){
   // =======================
   // RENDER ALL
   // =======================
-  function renderAll(){
+  
+  function applyViewRotation(){
+    if (!svg) return;
+    const map = { blue:0, red:90, yellow:180, green:270 };
+    viewDeg = map[room.myColor] ?? 0;
+    svg.style.transform = `rotate(${viewDeg}deg)`;
+
+    // kocka ne forduljon el
+    if (diceG){
+      diceG.setAttribute("transform", `translate(7.5 7.05) rotate(${-viewDeg})`);
+    }
+  }
+function renderAll(){
     buildBoardIfNeeded();
-    updateViewRotation();
-    updateMobileOverlay();
-    applyBoardRotation();
-    renderCornerLabels();
     renderTurn();
     renderScore();
     renderLogFromState();
@@ -1742,7 +1744,40 @@ async function animateMove(anim){
   // =======================
   // WIRES
   // =======================
+  // Mobilon: első érintésre próbál fullscreen + portrait lock
+  const wantMobileFs = matchMedia("(max-width: 680px)").matches;
+  if (wantMobileFs){
+    let fsTried = false;
+    document.addEventListener("pointerdown", async () => {
+      if (fsTried) return;
+      fsTried = true;
+
+      try{
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen){
+          await document.documentElement.requestFullscreen();
+        }
+      } catch {}
+
+      try{
+        if (screen.orientation && screen.orientation.lock){
+          await screen.orientation.lock("portrait");
+        }
+      } catch {}
+    }, { once:false, passive:true });
+  }
+
   elBtnRoll.addEventListener("click", actRoll);
+  elUiDice?.addEventListener("click", async () => {
+    // lobbyban a host tud Startolni a kockáról is
+    if (state?.status === "lobby"){
+      const isHost = (room.meId === state.hostId);
+      if (isHost && (state.players?.length || 0) >= 2){
+        await startGameFlow();
+      }
+      return;
+    }
+    if (canRoll()) await actRoll();
+  });
   elBtnSkip.addEventListener("click", async () => {
     if (!state || state.status !== "playing" || !isMyTurn()) return;
     const s2 = nextTurnInState(state, false);

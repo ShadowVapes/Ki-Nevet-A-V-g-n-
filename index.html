@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#1b1f2a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Ki nevet a végén – Online (2–4)</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -29,7 +32,16 @@
         <div id="board" class="board" role="application" aria-label="Ki nevet a végén tábla"></div>
       </div>
       <div class="board-help" id="boardHelp">
-        Katt a középső kockára dobáshoz (csak ha te jössz).
+        Dobáshoz katt a kockára (csak ha te jössz).
+      </div>
+      <div class="underbar" id="underbar">
+        <div class="turnpill" id="underTurn">
+          <span class="dot" id="underDot"></span>
+          <span class="txt" id="underName">—</span>
+        </div>
+        <button class="dicebtn" id="uiDice" type="button" aria-label="Kocka">
+          <span id="uiDiceFace">—</span>
+        </button>
       </div>
     </section>
 
@@ -154,7 +166,7 @@
           <li>6-os kell a bábu kihozásához.</li>
           <li>Dobás után megmutatja, hova érkezne a bábu (céljelölők).</li>
           <li>Ütés: ha nem védett mezőn áll az ellenfél, haza megy.</li>
-          <li>Védett: start mezők + a saját színű “színes track” szegmens.</li>
+          <li>Védett: csak a saját start meződ (a többiek startja nem védett neked).</li>
           <li>Hazafelé: előbb elmegy a bejáratig, utána megy be a színes sorba (nem vág le).</li>
         </ul>
       </div>
@@ -175,6 +187,10 @@
         <button class="btn primary" id="btnBackLobby" type="button">Vissza a lobbyba</button>
       </div>
     </div>
+  </div>
+
+  <div id="mHostCode" class="mHostCode" hidden>
+    <span class="tag">Kód</span> <span id="mHostCodeText">—</span>
   </div>
 
   <!-- Supabase -->
