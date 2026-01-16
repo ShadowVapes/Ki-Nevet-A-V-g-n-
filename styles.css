@@ -243,7 +243,7 @@ select, input[type="text"]{
 }
 .help{color:rgba(255,255,255,.85); font-size:12px; font-weight:800; opacity:.85}
 .grid2{display:grid; grid-template-columns: 1fr 1fr; gap:10px}
-@media (max-width:520px){ .grid2{grid-template-columns: 1fr;} }
+@media (max-width:520px){ .grid2{grid-template-columns: 1 fr;} }
 
 .check{
   display:flex; gap:10px; align-items:center;
@@ -338,130 +338,9 @@ select, input[type="text"]{
 
 @keyframes shake{
   0%{transform: translate(0,0) rotate(0deg)}
-  20%{transform: translate(.12px,-.08px) rotate(-3deg)}
-  45%{transform: translate(-.12px,.08px) rotate(3deg)}
-  70%{transform: translate(.10px,.10px) rotate(-2deg)}
+  25%{transform: translate(.08px,-.06px) rotate(-6deg)}
+  50%{transform: translate(-.06px,.06px) rotate(6deg)}
+  75%{transform: translate(.06px,.08px) rotate(-6deg)}
   100%{transform: translate(0,0) rotate(0deg)}
 }
-.diceRolling{animation:none}
-
-@media (max-width:980px){
-  .layout{grid-template-columns: 1fr;}
-}
-@media (max-width:520px){
-  .layout{padding:12px}
-  .brandtxt .s{display:none}
-}
-
-
-@media (max-width: 768px){
-  #btnRoll, #btnSkip{display:none !important;}
-}
-
-.diceInner.diceRolling{animation:none}
-
-/* Mobile: ne mutassa a backup/pass gombokat */
-@media (max-width: 768px){
-  #btnRoll, #btnSkip{display:none !important;}
-}
-
-
-/* Dice pulse (turn indicator) */
-.diceRoot.dicePulse .diceBox{
-  animation: dicePulse 1s ease-in-out infinite;
-}
-@keyframes dicePulse{
-  0%{ stroke-width: .18; }
-  50%{ stroke-width: .30; }
-  100%{ stroke-width: .18; }
-}
-
-/* On-board player labels */
-.pLabelText{
-  font-weight: 800;
-  font-size: 0.42px;
-  fill: rgba(255,255,255,.95);
-  paint-order: stroke;
-  stroke: rgba(0,0,0,.35);
-  stroke-width: 0.08px;
-}
-
-/* Mobile: fullscreen board, centered, no scroll */
-.mobile-room{
-  position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 60;
-  display: none;
-}
-.mobile-room .roompill{
-  display: inline-flex;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(0,0,0,.35);
-  border: 1px solid rgba(255,255,255,.14);
-  backdrop-filter: blur(10px);
-}
-.mobile-room .tag{
-  font-size: 12px;
-  font-weight: 800;
-  color: rgba(255,255,255,.70);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-.mobile-room .code{
-  font-size: 14px;
-  font-weight: 900;
-  letter-spacing: .10em;
-  color: rgba(255,255,255,.95);
-}
-
-@media (max-width: 720px){
-  html, body{
-    height: 100%;
-    overflow: hidden;
-  }
-
-  .topbar{
-    display: none;
-  }
-
-  .layout{
-    padding: 0;
-    margin: 0;
-    max-width: none;
-    height: 100svh;
-  }
-
-  .panel{
-    display: none;
-  }
-
-  .board-card{
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .board-shell{
-    padding: 0;
-    height: 100%;
-  }
-
-  .board{
-    width: min(100vw, 100svh);
-    height: min(100vw, 100svh);
-    margin: 0 auto;
-  }
-
-  .board-help{
-    display: none;
-  }
-
-  .mobile-room{
-    display: flex;
-  }
-}
+.diceRolling{ animation: shake 120ms linear infinite; }
