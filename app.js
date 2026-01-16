@@ -4,8 +4,8 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-"; 
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -74,22 +74,22 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   const COLORS = [
     { id:"green",  label:"Zöld",  hex:getCSS("--green"),  startCoord:[1,6],
-      homeSlots:[[2,2],[3,2],[2,3],[3,3]],
+      homeSlots:[[2,2],[4,2],[2,4],[4,4]],
       homeStretch:[[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],
       finishSpot:[6.75, 6.75],
     },
     { id:"yellow", label:"Sárga", hex:getCSS("--yellow"), startCoord:[8,1],
-      homeSlots:[[11,2],[12,2],[11,3],[12,3]],
+      homeSlots:[[10,2],[12,2],[10,4],[12,4]],
       homeStretch:[[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],
       finishSpot:[8.25, 6.75],
     },
     { id:"red",    label:"Piros", hex:getCSS("--red"),   startCoord:[13,8],
-      homeSlots:[[11,11],[12,11],[11,12],[12,12]],
+      homeSlots:[[10,10],[12,10],[10,12],[12,12]],
       homeStretch:[[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],
       finishSpot:[8.25, 8.25],
     },
     { id:"blue",   label:"Kék",   hex:getCSS("--blue"),  startCoord:[6,13],
-      homeSlots:[[2,11],[3,11],[2,12],[3,12]],
+      homeSlots:[[2,10],[4,10],[2,12],[4,12]],
       homeStretch:[[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]],
       finishSpot:[6.75, 8.25],
     },
@@ -107,12 +107,12 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // Safe: start mezők (mindenkinek safe)
   const SAFE_START_CELLS = new Set(Object.values(START_INDEX).map(i => cellKey(PATH[i][0], PATH[i][1])));
 
-  // Védett: csak a saját start mező
+  // Saját színű védett track szegmens (játékos kérésére): start után 5 mező
   const COLORED_TRACK = new Map(); // colorId -> Set(trackIndex)
   for (const c of COLORS){
     const si = START_INDEX[c.id];
     const set = new Set();
-    set.add(si); // csak a start
+    for (let k=0;k<6;k++) set.add((si + k) % PATH.length); // start + 5
     COLORED_TRACK.set(c.id, set);
   }
   const isProtectedTrackForColor = (colorId, trackIndex) => {
@@ -142,6 +142,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // =======================
   const elBoard = $("#board");
   const elBoardHelp = $("#boardHelp");
+  const elMobileRoomCode = $("#mobileRoomCode");
 
   const elBtnStartMain = $("#btnStartMain");
   const elBtnRoll = $("#btnRoll");
@@ -155,12 +156,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   const elScore = $("#score");
   const elLog = $("#log");
 
-  
-  const elUnderDot = $("#underDot");
-  const elUnderName = $("#underName");
-  const elUiDice = $("#uiDice");
-  const elUiDiceFace = $("#uiDiceFace");
-const netState = $("#netState");
+  const netState = $("#netState");
   const netState2 = $("#netState2");
 
   const lobbyModal = $("#lobbyModal");
@@ -212,18 +208,6 @@ const netState = $("#netState");
   let animLock = false;
   let pendingSnap = null;
 
-  // roll anim gating (targets only after roll anim finishes)
-  let rollAnimUntil = 0;
-
-  // view rotation degrees (for counter-rotating dice + pawns)
-  let viewDeg = 0;
-
-  // animation timing
-  const ROLL_ANIM_MS = 1000;
-  const MOVE_STEP_MS = 190;
-  const POST_MOVE_WAIT_MS = 1000;
-
-
   // polling fallback
   let pollTimer = null;
 
@@ -237,6 +221,21 @@ const netState = $("#netState");
   let dicePlayerText = null;
   let diceHintText = null;
   const pawnEls = new Map();
+
+  let gWorld = null;
+
+  // view rotation (board rotates per player; pawns + dice counter-rotate)
+  let viewRot = 0;
+
+  // roll animation sync
+  let rollAnimUntil = 0;
+  let lastRollStartAt = 0;
+  const ROLL_ANIM_MS = 1000;
+
+  // movement speed
+  const MOVE_STEP_MS = 160;
+  const MOVE_FIRST_STEP_MS = 80;
+
 
   // =======================
   // NETWORK
@@ -342,21 +341,6 @@ const netState = $("#netState");
     applySnapshot(newState, newVer);
   }
 
-
-  function updateMobileHostCode(){
-    const box = document.getElementById('mHostCode');
-    const txt = document.getElementById('mHostCodeText');
-    if (!box || !txt) return;
-    const isMobile = matchMedia('(max-width: 680px)').matches;
-    const isHost = (room.meId && state && state.hostId && room.meId === state.hostId);
-    if (isMobile && room.code && isHost){
-      txt.textContent = room.code;
-      box.hidden = false;
-    } else {
-      box.hidden = true;
-    }
-  }
-
   function applySnapshot(newState, newVer){
     state = newState;
     version = newVer;
@@ -364,8 +348,6 @@ const netState = $("#netState");
     renderAll();
     refreshControls();
     renderLobbyState();
-
-    updateMobileHostCode();
 
     if (state?.status === "ended"){
       const w = state.players?.find(p => p.id === state.winnerId);
@@ -381,7 +363,6 @@ const netState = $("#netState");
       animLock = true;
       try{
         await animateMove(payload.anim);
-        await delay(POST_MOVE_WAIT_MS);
       } finally {
         animLock = false;
       }
@@ -399,7 +380,10 @@ const netState = $("#netState");
   async function onRemoteRoll(payload){
     // csak vizuális anim + hint, a state úgyis jön snapshotból is
     if (payload?.die){
-      await diceRollAnim(payload.die, payload.at);
+      const startAt = payload.startAt ?? Date.now();
+      const dur = payload.duration ?? 1000;
+      rollAnimUntil = Math.max(rollAnimUntil, startAt + dur);
+      diceRollAnim(payload.die, startAt, dur);
     }
     if (payload?.byName && payload?.die){
       toast(`${payload.byName} dobott: ${payload.die}`);
@@ -409,20 +393,7 @@ const netState = $("#netState");
   async function pushState(newState, extras){
     try{
       const upd = await updateRoomState(newState, version);
-
-      if (extras?.moveAnim){
-        // helyben is animáljunk (ne teleportáljon), majd 2s szünet
-        animLock = true;
-        try{
-          await animateMove(extras.moveAnim);
-          await delay(POST_MOVE_WAIT_MS);
-        } finally {
-          animLock = false;
-        }
-        applySnapshot(upd.state, upd.version);
-      } else {
-        applySnapshot(upd.state, upd.version);
-      }
+      applySnapshot(upd.state, upd.version);
 
       if (extras?.moveAnim){
         await broadcast("move", {
@@ -437,7 +408,8 @@ const netState = $("#netState");
           die: extras.rollAnim.die,
           byName: extras.rollAnim.byName,
           colorId: extras.rollAnim.colorId,
-          at: extras.rollAnim.at
+          startAt: extras.rollAnim.startAt,
+          duration: extras.rollAnim.duration
         });
       }
     } catch (e){
@@ -560,16 +532,17 @@ const netState = $("#netState");
       return { state:"homeStretch", trackIndex:null, stretchIndex:into };
     }
 
-    // homeStretch (bounce)
+    // homeStretch (bounce szabály)
     if (piece.state === "homeStretch"){
-      const ni = piece.stretchIndex + die;
-      if (ni === 6) return { state:"finished", trackIndex:null, stretchIndex:null };
-      if (ni < 6) return { state:"homeStretch", trackIndex:null, stretchIndex:ni };
-
-      // túldobás: előre a célig (6), majd vissza
-      const over = ni - 6;
-      const back = 6 - over;
-      return { state:"homeStretch", trackIndex:null, stretchIndex:back };
+      const cur = piece.stretchIndex;
+      const target = cur + die;
+      if (target === 6) return { state:"finished", trackIndex:null, stretchIndex:null };
+      if (target < 6) return { state:"homeStretch", trackIndex:null, stretchIndex:target };
+      // túldobás: elmegy 6-ig, majd vissza
+      const extra = target - 6;
+      const back = 6 - extra;
+      if (back === 6) return { state:"finished", trackIndex:null, stretchIndex:null };
+      return { state:"homeStretch", trackIndex:null, stretchIndex:Math.max(0, back) };
     }
 
     return null;
@@ -624,10 +597,10 @@ const netState = $("#netState");
       const coord = PATH[piece.trackIndex];
       const key = cellKey(coord[0], coord[1]);
 
-      // csak az a bábu védett, aki a SAJÁT start mezőjén áll
-      const owner = startOwnerByCell(key); // "green/yellow/red/blue" vagy null
+      // safe start mezők (mindenkinek safe)
+      const safeStart = SAFE_START_CELLS.has(key);
 
-      {
+      if (!safeStart){
         const victims = s.pieces.filter(pp =>
           pp.id !== piece.id &&
           pp.state === "track" &&
@@ -641,8 +614,8 @@ const netState = $("#netState");
           const knocked = [];
 
           for (const v of victims){
-            const protectedByOwnStart = (owner && owner === v.playerId);
-            if (protectedByOwnStart){
+            const protectedByOwnColor = isProtectedTrackForColor(v.playerId, v.trackIndex);
+            if (protectedByOwnColor){
               survivors.push(v);
             }else{
               knocked.push(v);
@@ -658,7 +631,7 @@ const netState = $("#netState");
           if (knocked.length){
             s.log.unshift(`${actor.name} ütött: ${knocked.length} bábu haza.`);
           } else if (survivors.length){
-            s.log.unshift(`${actor.name} próbált ütni, de védett start mező.`);
+            s.log.unshift(`${actor.name} próbált ütni, de védett mező (saját szín).`);
           }
         }
       }
@@ -700,7 +673,7 @@ const netState = $("#netState");
     return state && state.status === "playing" && state.phase === "needRoll" && isMyTurn();
   }
   function canPick(pieceId){
-    return state && state.status === "playing" && state.phase === "needPick" && isMyTurn() && (state.movablePieceIds||[]).includes(pieceId);
+    return state && state.status === "playing" && state.phase === "needPick" && isMyTurn() && (Date.now() >= rollAnimUntil) && (state.movablePieceIds||[]).includes(pieceId);
   }
 
   // =======================
@@ -716,37 +689,25 @@ const netState = $("#netState");
   }
 
   function setDiceFace(n){
-    const t = String(n ?? "—");
-    if (diceFaceText) diceFaceText.textContent = t;
-    if (elUiDiceFace) elUiDiceFace.textContent = t;
+    if (!diceFaceText) return;
+    diceFaceText.textContent = String(n ?? "—");
   }
 
-  async function diceRollAnim(finalDie, startAtMs){
-    // 1s "pörgetés": mindenkinél ugyanakkor indul (startAtMs alapján), utána megáll
-    if (!diceG && !elUiDice) return;
-
-    const startAt = startAtMs ?? Date.now();
-    const endAt = startAt + ROLL_ANIM_MS;
-    rollAnimUntil = Math.max(rollAnimUntil, endAt);
-
+  async function diceRollAnim(finalDie, startAt=Date.now(), duration=1000){
+    if (!diceG) return;
     const wait = startAt - Date.now();
     if (wait > 0) await delay(wait);
 
-    diceG?.classList.add("diceRolling");
-
-    const start = performance.now();
-    let last = 0;
-    while ((performance.now() - start) < ROLL_ANIM_MS){
-      const now = performance.now();
-      if (now - last >= 70){
-        last = now;
-        setDiceFace((Math.floor(Math.random()*6) + 1));
-      }
-      await delay(16);
+    diceG.classList.add("diceRolling");
+    const t0 = Date.now();
+    // gyors pörgetés a teljes idő alatt
+    while (Date.now() - t0 < Math.max(0, duration - 120)){
+      setDiceFace(((Math.floor((Date.now()-t0)/40) % 6) + 1));
+      await delay(40);
     }
-
     setDiceFace(finalDie);
-    diceG?.classList.remove("diceRolling");
+    await delay(80);
+    diceG.classList.remove("diceRolling");
   }
 
   // =======================
@@ -756,10 +717,12 @@ const netState = $("#netState");
     if (!canRoll()) return;
 
     const die = rollDie();
+    const startAt = Date.now() + 250; // kis ráhagyás a szinkronhoz
+    const duration = 1000;
 
-    // időzített dobás anim: mindenkinél egyszerre
-    const startAt = Date.now() + 140;
-    diceRollAnim(die, startAt);
+    rollAnimUntil = Math.max(rollAnimUntil, startAt + duration);
+    // local vizu anim szinkronban
+    diceRollAnim(die, startAt, duration);
 
     const s = deepClone(state);
     const cp = currentPlayer(s);
@@ -768,8 +731,8 @@ const netState = $("#netState");
     s.phase = "needPick";
     s.updatedAt = nowIso();
 
-    // lastRoll megmarad + időbélyeg a szinkron animhoz
-    s.lastRoll = { byId: cp.id, byName: cp.name, colorId: cp.colorId, die, at: startAt };
+    // FIX: lastRoll megmarad
+    s.lastRoll = { byId: cp.id, byName: cp.name, colorId: cp.colorId, die, at: Date.now() };
 
     s.log.unshift(`${cp.name} dobott: ${die}.`);
     s.movablePieceIds = updateMovablePieceIds(s);
@@ -777,19 +740,103 @@ const netState = $("#netState");
     if (s.movablePieceIds.length === 0){
       s.log.unshift(`${cp.name}: nincs lépés.`);
       const s2 = nextTurnInState(s, false);
-      await pushState(s2, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, at: startAt } });
+      await pushState(s2, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, startAt, duration } });
       return;
     }
 
-    await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, at: startAt } });
+    await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, startAt, duration } });
 
-    // auto-move
+    // auto-move (várja meg a dobás anim végét)
     if (s.settings.autoMove && s.movablePieceIds.length === 1){
-      await delay(ROLL_ANIM_MS + 40);
+      const wait = (startAt + duration + 40) - Date.now();
+      if (wait > 0) await delay(wait);
       if (state && state.phase === "needPick" && isMyTurn() && state.movablePieceIds.length === 1){
         await actPick(state.movablePieceIds[0]);
       }
     }
+  }
+
+  function computeViewRotation(){
+    const id = room.myColor;
+    if (id === "blue") return 0;
+    if (id === "red") return 90;
+    if (id === "yellow") return 180;
+    if (id === "green") return 270;
+    return 0;
+  }
+
+  function applyViewRotation(){
+    viewRot = computeViewRotation();
+    if (gWorld){
+      gWorld.setAttribute("transform", `rotate(${viewRot} 7.5 7.5)`);
+    }
+    // dice counter-rotate
+    if (diceG){
+      diceG.setAttribute("transform", `translate(7.5 7.05)`);
+    }
+  }
+
+  function pawnTransform(x,y, scale=1, dx=0, dy=0){
+    return `translate(${(x+dx).toFixed(3)}, ${(y+dy).toFixed(3)}) rotate(${-viewRot}) scale(${scale})`;
+  }
+
+  async function pushStateWithTurnDelay(finalStateAfterTurnComputed, moveAnim, extraTurn){
+    // Itt a finalStateAfterTurnComputed már nextTurnInState()-ből jön (phase: needRoll),
+    // de a turnIndex csak akkor legyen érvényes, ha NEM extra kör.
+    // Megoldás: két lépcsőben pusholunk: (1) állapot a lépés után, még ugyanazzal a turnIdx-vel
+    // (2) anim +1s után váltunk (ha kell).
+
+    // 1) lépés utáni 'postMove' state: visszavesszük a turn váltást ha nem extra, és csak később alkalmazzuk
+    const postMove = deepClone(state);
+    // postMove legyen a lépés utáni állapot (a hívó már kiszámolta s2-t, de az már turnváltott)
+    // ezért a hívó s2-t átadjuk, és készítünk egy copy-t, amin visszaállítjuk a turn váltást ideiglenesen
+    const intended = deepClone(finalStateAfterTurnComputed);
+
+    // intended-ben már s.phase=needRoll, die=null, stb. A turnIdx viszont extra kör esetén ugyanaz,
+    // nem extra esetén következő. Mi azt akarjuk, hogy a snapshot a lépés alatt még a régi turnIdx maradjon.
+    const before = deepClone(state);
+    postMove.status = intended.status;
+    postMove.settings = intended.settings;
+    postMove.players = intended.players;
+    postMove.pieces = intended.pieces;
+    postMove.log = intended.log;
+    postMove.winnerId = intended.winnerId;
+
+    // ideiglenesen: maradjon a mostani kör
+    postMove.turnIdx = before.turnIdx;
+    postMove.phase = 'animating';
+    postMove.die = before.die;
+    postMove.movablePieceIds = [];
+    postMove.updatedAt = nowIso();
+
+    await pushState(postMove, { moveAnim });
+
+    // ha nyertünk, nem váltunk tovább
+    if (intended.status === 'ended') return;
+
+    // 2) anim +1s után: alkalmazzuk az intended-et
+    const steps = (moveAnim?.steps?.length || 1);
+    const animMs = steps * MOVE_STEP_MS + 80;
+    await delay(animMs + 1000);
+
+    // frissítsük az aktuális state-et a DB-ből, hogy ne csússzunk verziót
+    const rr = await fetchRoom(room.code).catch(()=>null);
+    if (rr){ applySnapshot(rr.state, rr.version); }
+
+    // csak az a kliens váltson, aki lépett (és még mindig ugyanabban a körben vagyunk)
+    if (!state || state.status !== 'playing') return;
+    const cpNow = currentPlayer(state);
+    // ha valahogy már váltott, ne duplázzunk
+    if (state.phase !== 'animating') return;
+
+    // most alkalmazzuk az intended-et, de fixen: die null, phase needRoll
+    const commit = deepClone(intended);
+    commit.phase = 'needRoll';
+    commit.die = null;
+    commit.movablePieceIds = [];
+    commit.updatedAt = nowIso();
+
+    await pushState(commit, null);
   }
 
   function buildMoveAnim(prev, piece, mv){
@@ -829,26 +876,26 @@ const netState = $("#netState");
     }
     else if (piece.state === "homeStretch"){
       const start = piece.stretchIndex;
-      if (mv.state === "finished"){
-        for (let i=start+1;i<=6;i++){
-          if (i === 6) steps.push({ x:c.finishSpot[0], y:c.finishSpot[1] });
-          else steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
-        }
-      } else {
-        const target = start + die;
-        if (target <= 6){
-          for (let i=start+1;i<=mv.stretchIndex;i++){
-            steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
-          }
+      // végállomás: ha finished akkor 6, különben stretchIndex
+      const dieSteps = prev.die;
+      const target = start + dieSteps;
+
+      // előre lépések (6-ig)
+      const forwardEnd = Math.min(6, target);
+      for (let i=start+1;i<=forwardEnd;i++){
+        if (i === 6){
+          steps.push({ x:c.finishSpot[0], y:c.finishSpot[1] });
         } else {
-          // bounce: előre 6-ig, aztán vissza mv.stretchIndex-ig
-          for (let i=start+1;i<=6;i++){
-            if (i === 6) steps.push({ x:c.finishSpot[0], y:c.finishSpot[1] });
-            else steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
-          }
-          for (let i=5;i>=mv.stretchIndex;i--){
-            steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
-          }
+          steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
+        }
+      }
+
+      // bounce vissza, ha túldobás
+      if (target > 6){
+        const extra = target - 6;
+        for (let j=1;j<=extra;j++){
+          const i = 6 - j;
+          steps.push({ x:c.homeStretch[i][0]+0.5, y:c.homeStretch[i][1]+0.5 });
         }
       }
     }
@@ -859,24 +906,16 @@ const netState = $("#netState");
       const coord = PATH[landing];
       const key = cellKey(coord[0], coord[1]);
 
-      {
+      if (!SAFE_START_CELLS.has(key)){
         const victims = prev.pieces.filter(pp =>
           pp.id !== piece.id &&
           pp.state === "track" &&
           pp.trackIndex === landing &&
           pp.playerId !== piece.playerId
         );
-
-        if (victims.length){
-          // csak az a bábu védett, aki a SAJÁT start mezőjén áll
-          const coord2 = PATH[landing];
-          const owner = startOwnerByCell(cellKey(coord2[0], coord2[1])); // "green/yellow/red/blue" vagy null
-
-          for (const v of victims){
-            const protectedByOwnStart = (owner && owner === v.playerId);
-            if (!protectedByOwnStart){
-              captures.push(v.id);
-            }
+        for (const v of victims){
+          if (!isProtectedTrackForColor(v.playerId, v.trackIndex)){
+            captures.push(v.id);
           }
         }
       }
@@ -891,75 +930,48 @@ const netState = $("#netState");
     const piece = state.pieces.find(p => p.id === pieceId);
     if (!piece) return;
 
-    const die = state.die;
-    const mv = computeLegalMove(state, piece, die);
+    const mv = computeLegalMove(state, piece, state.die);
     if (!mv) return;
 
-    const cpBefore = currentPlayer(state);
-    const plBefore = state.players.find(p => p.id === cpBefore.id);
-    const finishedBefore = (plBefore?.finished || 0);
-
+    // anim lépésről-lépésre
     const anim = buildMoveAnim(state, piece, mv);
-    let sMoved = applyMoveToState(state, pieceId, mv);
+
+    // állapot: lépés alkalmazása
+    let s2 = applyMoveToState(state, pieceId, mv);
+
+    const cpAfter = currentPlayer(s2);
+    const plAfter = s2.players.find(p => p.id === cpAfter.id);
 
     // win?
-    const cpAfter = currentPlayer(sMoved);
-    const plAfter = sMoved.players.find(p => p.id === cpAfter.id);
-    const finishedAfter = (plAfter?.finished || 0);
-    const finishedNow = finishedAfter > finishedBefore;
-
-    if (plAfter && finishedAfter >= 4){
-      sMoved.status = "ended";
-      sMoved.phase = "ended";
-      sMoved.winnerId = cpAfter.id;
-      sMoved.log.unshift(`${cpAfter.name} nyert!`);
-      sMoved.updatedAt = nowIso();
-      await pushState(sMoved, { moveAnim: anim });
+    if (plAfter && (plAfter.finished || 0) >= 4){
+      s2.status = "ended";
+      s2.phase = "ended";
+      s2.winnerId = cpAfter.id;
+      s2.log.unshift(`${cpAfter.name} nyert!`);
+      s2.updatedAt = nowIso();
+      await pushState(s2, { moveAnim: anim });
       return;
     }
 
-    // extra turn: 6 vagy beérés (nem stackelődik duplán)
-    const extra = ((sMoved.settings.extraTurnOnSix && die === 6) || finishedNow);
+    // extra turn rules (NEM stackelődik):
+    // - 6-os dobásnál mindig extra
+    // - ha beért egy bábu -> extra
+    const finishedThisMove = (mv.state === "finished");
+    const extraBySix = (s2.settings.extraTurnOnSix && state.die === 6);
+    const extra = extraBySix || finishedThisMove;
 
-    // 1) küldjük a lépést (turn még marad ugyanaz, amíg az anim + 1s lemegy)
-    const sPost = deepClone(sMoved);
-    sPost.die = null;
-    sPost.movablePieceIds = [];
-    sPost.phase = "postMove";
-    sPost.updatedAt = nowIso();
-
-    // ha extra, ugyanaz a játékos jön majd
-    if (extra){
-      sPost.log.unshift(`${cpAfter.name} még egyszer jön.`);
+    if (finishedThisMove){
+      s2.log.unshift(`${cpAfter.name}: beérés -> még egy dobás.`);
+    } else if (extraBySix){
+      s2.log.unshift(`${cpAfter.name} 6-os! Még egy dobás.`);
     }
 
-    await pushState(sPost, { moveAnim: anim });
+    // turn váltás kiszámolása, DE a commit csak anim +1s után
+    const intended = nextTurnInState(s2, extra);
 
-    // 2) ha NEM extra: anim vége után +1s, aztán következő játékos
-    if (!extra){
-      await delay(POST_MOVE_WAIT_MS);
-      if (!state || state.status !== "playing") return;
-      // ha közben már nem ugyanaz a kör (desync), ne erőltesd
-      const cur = currentPlayer(state);
-      if (!cur || cur.id !== cpAfter.id) return;
-
-      const sNext = nextTurnInState(state, false);
-      await pushState(sNext, null);
-    } else {
-      // extra esetben: anim + 1s után dobható újra ugyanaz a játékos
-      await delay(POST_MOVE_WAIT_MS);
-      if (!state || state.status !== "playing") return;
-      const cur = currentPlayer(state);
-      if (!cur || cur.id !== cpAfter.id) return;
-      if (state.phase === "postMove"){
-        const sReady = deepClone(state);
-        sReady.phase = "needRoll";
-        sReady.updatedAt = nowIso();
-        await pushState(sReady, null);
-      }
-    }
+    // anim végéig marad a kör színe, utána +1s, aztán vált
+    await pushStateWithTurnDelay(intended, anim, extra);
   }
-
 
   // =======================
   // LOBBY
@@ -1259,13 +1271,6 @@ const netState = $("#netState");
     const cp = currentPlayer(state);
     elTurnName.textContent = cp ? cp.name : "—";
     elTurnDot.style.background = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.25)";
-
-    if (elUnderName) elUnderName.textContent = cp ? cp.name : "—";
-    if (elUnderDot) elUnderDot.style.background = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.25)";
-    if (elUiDice){
-      const col = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
-      elUiDice.style.borderColor = col;
-    }
     const my = (cp && cp.id === room.meId) ? " (te)" : "";
     const lr = state.lastRoll ? ` • Utolsó dobás: ${state.lastRoll.byName}=${state.lastRoll.die}` : "";
     elTurnMeta.textContent = `Kör: ${state.turnIdx+1}/${state.players.length}${my}${lr}`;
@@ -1305,16 +1310,13 @@ const netState = $("#netState");
       elBoardHelp.textContent = "A játék a kockán keresztül megy. Lobbyban Startol a host.";
     } else {
       elBoardHelp.textContent = canRoll()
-        ? "Te jössz: dobj a kockával."
+        ? "Te jössz: katt a kockára dobáshoz."
         : "Várj a körödre…";
     }
 
     // dice enabled/disabled vizuál
     if (diceG){
       diceG.classList.toggle("diceDisabled", !(isPlaying && (canRoll() || (isMyTurn() && state.phase === "needPick"))));
-      if (elUiDice){
-        elUiDice.disabled = !(isPlaying && (canRoll() || (isMyTurn() && state.phase === "needPick")));
-      }
     }
   }
 
@@ -1329,6 +1331,11 @@ const netState = $("#netState");
     svg.setAttribute("viewBox","0 0 15 15");
     svg.setAttribute("preserveAspectRatio","xMidYMid meet");
 
+    // world layer: this is what rotates per player
+    gWorld = document.createElementNS(svg.namespaceURI,"g");
+    gWorld.setAttribute("class","world");
+    svg.appendChild(gWorld);
+
     // cells
     for (let y=0;y<15;y++){
       for (let x=0;x<15;x++){
@@ -1341,7 +1348,7 @@ const netState = $("#netState");
         const info = getCellInfo(x,y);
         rect.setAttribute("fill", info.fill);
         rect.setAttribute("class", `cell ${info.cls}`);
-        svg.appendChild(rect);
+        gWorld.appendChild(rect);
 
         // start dots
         if (SAFE_START_CELLS.has(cellKey(x,y))){
@@ -1350,7 +1357,7 @@ const netState = $("#netState");
           dot.setAttribute("cy", y+0.5);
           dot.setAttribute("r", 0.10);
           dot.setAttribute("fill", "rgba(255,255,255,.70)");
-          svg.appendChild(dot);
+          gWorld.appendChild(dot);
         }
       }
     }
@@ -1367,21 +1374,23 @@ const netState = $("#netState");
       poly.setAttribute("points", t.pts);
       poly.setAttribute("fill", t.fill);
       poly.setAttribute("class","center");
-      svg.appendChild(poly);
+      gWorld.appendChild(poly);
     }
 
     // targets layer
     gTargets = document.createElementNS(svg.namespaceURI,"g");
-    svg.appendChild(gTargets);
+    gWorld.appendChild(gTargets);
 
     // pieces layer
     gPieces = document.createElementNS(svg.namespaceURI,"g");
-    svg.appendChild(gPieces);
+    gWorld.appendChild(gPieces);
 
     // center dice (on top)
     buildCenterDice();
 
     elBoard.appendChild(svg);
+
+    applyViewRotation();
   }
 
   function getCellInfo(x,y){
@@ -1425,7 +1434,7 @@ const netState = $("#netState");
     diceG = document.createElementNS(svg.namespaceURI,"g");
     diceG.setAttribute("class","diceRoot");
     // közép környéke, kicsit feljebb, hogy a szöveg alatt elférjen
-    diceG.setAttribute("transform",`translate(7.5 7.05) rotate(${-viewDeg})`);
+    // transform is set by applyViewRotation()
     svg.appendChild(diceG);
 
     diceRect = document.createElementNS(svg.namespaceURI,"rect");
@@ -1538,47 +1547,60 @@ const netState = $("#netState");
     }
   }
 
+
   function renderPieces(){
     if (!state) return;
 
-    // stack: ugyanazon mezőn több bábu -> kicsi eltolások
-    const buckets = new Map();
-    const basePos = new Map();
-
+    // stack groups by logical cell
+    const groups = new Map();
     for (const piece of state.pieces){
-      const pos = pieceToPos(state, piece);
-      const key = `${pos.x.toFixed(2)}:${pos.y.toFixed(2)}`;
-      basePos.set(piece.id, pos);
-      if (!buckets.has(key)) buckets.set(key, []);
-      buckets.get(key).push(piece.id);
+      let key = "";
+      if (piece.state === "home"){
+        const c = COLORS.find(x => x.id === piece.playerId);
+        const slot = c.homeSlots[piece.n];
+        key = `H:${piece.playerId}:${slot[0]},${slot[1]}`;
+      } else if (piece.state === "track"){
+        key = `T:${piece.trackIndex}`;
+      } else if (piece.state === "homeStretch"){
+        key = `S:${piece.playerId}:${piece.stretchIndex}`;
+      } else if (piece.state === "finished"){
+        key = `F:${piece.playerId}`;
+      } else {
+        key = `X:${piece.id}`;
+      }
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(piece);
     }
 
-    const offsetsFor = (n)=>{
-      if (n<=1) return [{dx:0,dy:0}];
-      if (n==2) return [{dx:-0.14,dy:0},{dx:0.14,dy:0}];
-      if (n==3) return [{dx:-0.14,dy:0.10},{dx:0.14,dy:0.10},{dx:0,dy:-0.16}];
-      // 4+
-      return [{dx:-0.14,dy:-0.14},{dx:0.14,dy:-0.14},{dx:-0.14,dy:0.14},{dx:0.14,dy:0.14}];
-    };
+    for (const [key, arr] of groups){
+      const n = arr.length;
+      // 1: normal, 2-4: shrink + offset so all visible
+      let scale = 1;
+      let offsets = [{dx:0,dy:0}];
+      if (n >= 2){
+        scale = 0.78;
+        const d = 0.22;
+        offsets = [
+          {dx:-d, dy:-d},
+          {dx:+d, dy:-d},
+          {dx:-d, dy:+d},
+          {dx:+d, dy:+d},
+        ];
+      }
 
-    for (const [key, ids] of buckets.entries()){
-      const offs = offsetsFor(ids.length);
-      ids.forEach((id, idx)=>{
-        const g = pawnEls.get(id);
-        if (!g) return;
-        const pos = basePos.get(id);
-        const o = offs[Math.min(idx, offs.length-1)];
-        const x = pos.x + (o?.dx||0);
-        const y = pos.y + (o?.dy||0);
+      for (let i=0;i<n;i++){
+        const piece = arr[i];
+        const g = pawnEls.get(piece.id);
+        if (!g) continue;
 
-        // tábla forog, de a bábu álljon egyenesen
-        g.setAttribute("transform", `translate(${x}, ${y}) rotate(${-viewDeg})`);
+        const pos = pieceToPos(state, piece);
+        const off = offsets[Math.min(i, offsets.length-1)];
+        g.setAttribute("transform", pawnTransform(pos.x, pos.y, scale, off.dx, off.dy));
 
-        const movable = (state.status === "playing" && state.phase === "needPick" && isMyTurn() && (state.movablePieceIds||[]).includes(id) && Date.now() >= rollAnimUntil);
+        const movable = (state.status === "playing" && state.phase === "needPick" && isMyTurn() && (Date.now() >= rollAnimUntil) && (state.movablePieceIds||[]).includes(piece.id));
         g.classList.toggle("movable", movable);
-        const piece = state.pieces.find(p=>p.id===id);
-        g.style.opacity = piece?.state === "finished" ? "0.85" : "1";
-      });
+        g.style.opacity = piece.state === "finished" ? "0.85" : "1";
+      }
     }
   }
 
@@ -1589,8 +1611,6 @@ const netState = $("#netState");
     if (!state || state.status !== "playing") return;
     if (!isMyTurn()) return;
     if (state.phase !== "needPick") return;
-
-    // dobás anim alatt ne mutasson céljelölést
     if (Date.now() < rollAnimUntil) return;
 
     const cp = currentPlayer(state);
@@ -1639,15 +1659,17 @@ const netState = $("#netState");
       dicePlayerText.textContent = state?.status === "lobby" ? "Lobby (host start)" : "—";
       diceHintText.textContent = state?.status === "lobby" ? "Katt: Start (host)" : "";
       diceRect.setAttribute("stroke", "rgba(255,255,255,.35)");
+      diceG.classList.remove("dicePulse");
       return;
     }
 
     const cp = currentPlayer(state);
     const c = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
+    // körvonal = soron következő színe
     diceRect.setAttribute("stroke", withAlpha(c, 0.95));
 
-    // pulzáljon annak a játékosnak, aki dobhat
-    diceG.classList.toggle("turnPulse", state.status === "playing" && state.phase === "needRoll");
+    // pulzáljon amikor dobni kell
+    diceG.classList.toggle("dicePulse", !!canRoll());
 
     // face: ha van aktuális die, azt mutatja, különben lastRoll
     if (state.die){
@@ -1675,21 +1697,24 @@ const netState = $("#netState");
     const g = pawnEls.get(anim.pieceId);
     if (!g) return;
 
+    // anim során nem stackelünk, csak a mozgatott bábut
     for (let i=0;i<anim.steps.length;i++){
       const p = anim.steps[i];
-      g.setAttribute("transform", `translate(${p.x}, ${p.y}) rotate(${-viewDeg})`);
+      g.setAttribute("transform", pawnTransform(p.x, p.y));
       // hop
-      // nincs "ugrálás" anim
-      await delay(i == 0 ? 40 : MOVE_STEP_MS);
+      g.classList.remove("hop");
+      void g.getBBox();
+      g.classList.add("hop");
+      await delay(i === 0 ? 80 : MOVE_STEP_MS);
     }
 
     if (anim.captures?.length){
       for (const vid of anim.captures){
         const vg = pawnEls.get(vid);
         if (!vg) continue;
-        vg.style.transition = "opacity 120ms ease";
+        vg.style.transition = "opacity 140ms ease";
         vg.style.opacity = "0.15";
-        await delay(120);
+        await delay(140);
         vg.style.opacity = "1";
         vg.style.transition = "";
       }
@@ -1715,20 +1740,9 @@ const netState = $("#netState");
   // =======================
   // RENDER ALL
   // =======================
-  
-  function applyViewRotation(){
-    if (!svg) return;
-    const map = { blue:0, red:90, yellow:180, green:270 };
-    viewDeg = map[room.myColor] ?? 0;
-    svg.style.transform = `rotate(${viewDeg}deg)`;
-
-    // kocka ne forduljon el
-    if (diceG){
-      diceG.setAttribute("transform", `translate(7.5 7.05) rotate(${-viewDeg})`);
-    }
-  }
-function renderAll(){
+  function renderAll(){
     buildBoardIfNeeded();
+    applyViewRotation();
     renderTurn();
     renderScore();
     renderLogFromState();
@@ -1738,46 +1752,22 @@ function renderAll(){
     renderTargets();
     renderDiceOverlay();
 
+    const mobile = (window.matchMedia && window.matchMedia("(max-width: 820px)").matches);
+    document.body.classList.toggle("isMobile", mobile);
+
+    if (elMobileRoomCode){
+      const isHost = !!(mobile && room.code && state && room.meId === state.hostId);
+      elMobileRoomCode.hidden = !isHost;
+      if (isHost) elMobileRoomCode.textContent = `Szoba: ${room.code}`;
+    }
+
     refreshControls();
   }
 
   // =======================
   // WIRES
   // =======================
-  // Mobilon: első érintésre próbál fullscreen + portrait lock
-  const wantMobileFs = matchMedia("(max-width: 680px)").matches;
-  if (wantMobileFs){
-    let fsTried = false;
-    document.addEventListener("pointerdown", async () => {
-      if (fsTried) return;
-      fsTried = true;
-
-      try{
-        if (!document.fullscreenElement && document.documentElement.requestFullscreen){
-          await document.documentElement.requestFullscreen();
-        }
-      } catch {}
-
-      try{
-        if (screen.orientation && screen.orientation.lock){
-          await screen.orientation.lock("portrait");
-        }
-      } catch {}
-    }, { once:false, passive:true });
-  }
-
   elBtnRoll.addEventListener("click", actRoll);
-  elUiDice?.addEventListener("click", async () => {
-    // lobbyban a host tud Startolni a kockáról is
-    if (state?.status === "lobby"){
-      const isHost = (room.meId === state.hostId);
-      if (isHost && (state.players?.length || 0) >= 2){
-        await startGameFlow();
-      }
-      return;
-    }
-    if (canRoll()) await actRoll();
-  });
   elBtnSkip.addEventListener("click", async () => {
     if (!state || state.status !== "playing" || !isMyTurn()) return;
     const s2 = nextTurnInState(state, false);
