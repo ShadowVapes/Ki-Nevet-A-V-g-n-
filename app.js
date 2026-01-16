@@ -4,8 +4,8 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -76,22 +76,22 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   const COLORS = [
     { id:"green",  label:"Zöld",  hex:getCSS("--green"),  startCoord:[1,6],
-      homeSlots:[[2,2],[4,2],[2,4],[4,4]],
+      homeSlots:[[1,1],[4,1],[1,4],[4,4]],
       homeStretch:[[1,7],[2,7],[3,7],[4,7],[5,7],[6,7]],
       finishSpot:[6.75, 6.75],
     },
     { id:"yellow", label:"Sárga", hex:getCSS("--yellow"), startCoord:[8,1],
-      homeSlots:[[10,2],[12,2],[10,4],[12,4]],
+      homeSlots:[[10,1],[13,1],[10,4],[13,4]],
       homeStretch:[[7,1],[7,2],[7,3],[7,4],[7,5],[7,6]],
       finishSpot:[8.25, 6.75],
     },
     { id:"red",    label:"Piros", hex:getCSS("--red"),   startCoord:[13,8],
-      homeSlots:[[10,10],[12,10],[10,12],[12,12]],
+      homeSlots:[[10,10],[13,10],[10,13],[13,13]],
       homeStretch:[[13,7],[12,7],[11,7],[10,7],[9,7],[8,7]],
       finishSpot:[8.25, 8.25],
     },
     { id:"blue",   label:"Kék",   hex:getCSS("--blue"),  startCoord:[6,13],
-      homeSlots:[[2,10],[4,10],[2,12],[4,12]],
+      homeSlots:[[1,10],[4,10],[1,13],[4,13]],
       homeStretch:[[7,13],[7,12],[7,11],[7,10],[7,9],[7,8]],
       finishSpot:[6.75, 8.25],
     },
@@ -223,25 +223,30 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   }
 
   function myColorId(){
-    if (!state) return null;
+    // Everyone should see their *own* color in the bottom-left.
+    // In online rooms we already know our assigned color (room.myColor)
+    // even before our player row is present in the room state.
     if (OFFLINE){
-      // offline: just keep blue orientation
-      return state.players?.[0]?.colorId || 'blue';
+      return room.myColor || state?.players?.[0]?.colorId || 'blue';
     }
-    const me = state.players?.find(p => p.id === room.meId);
+    if (room.myColor) return room.myColor;
+    const me = state?.players?.find(p => p.id === room.meId);
     return me?.colorId || null;
   }
 
   function angleForColor(colorId){
     // Goal: everyone sees their OWN color in the bottom-left corner.
     // Default board corners: green=top-left, yellow=top-right, red=bottom-right, blue=bottom-left.
-    // To bring each corner to bottom-left we rotate the board CLOCKWISE:
-    // blue -> 0°, red -> 90°, yellow -> 180°, green -> 270°.
+    // To bring each color's home-corner to bottom-left we rotate the board CLOCKWISE (SVG y-down):
+    // blue (already bottom-left) -> 0°
+    // green (top-left -> bottom-left) -> 90°
+    // yellow (top-right -> bottom-left) -> 180°
+    // red (bottom-right -> bottom-left) -> 270°
     switch(colorId){
       case 'blue': return 0;
-      case 'red': return 90;
+      case 'green': return 90;
       case 'yellow': return 180;
-      case 'green': return 270;
+      case 'red': return 270;
       default: return 0;
     }
   }
@@ -285,6 +290,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   let gLabels = null;
   let viewAngleDeg = 0;
   let uiDiceRolling = false;
+  let uiRollLockUntil = 0; // timestamp: while > now, do not reveal movable pieces/targets
 
   const ROLL_ANIM_MS = 1000;
   const ROLL_SYNC_BUFFER_MS = 220;
@@ -410,6 +416,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     state = newState;
     version = newVer;
 
+    syncUiRollLockFromState();
     renderAll();
     refreshControls();
     renderLobbyState();
@@ -777,15 +784,32 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     diceFaceText.textContent = String(n ?? "—");
   }
 
+  function syncUiRollLockFromState(){
+    if (!state || !state.lastRoll) return;
+    // If we received a DB snapshot first (before realtime roll event),
+    // suppress pick/targets for the duration of the roll animation.
+    const now = Date.now();
+    const at = Number(state.lastRoll.at || 0);
+    if (!at) return;
+    const until = at + ROLL_SYNC_BUFFER_MS + ROLL_ANIM_MS;
+    if (now < until){
+      uiRollLockUntil = Math.max(uiRollLockUntil, until);
+      uiDiceRolling = true;
+    }
+  }
+
   async function diceRollAnim(finalDie, startAt=null, durationMs=ROLL_ANIM_MS){
     if (!diceInnerG) return;
 
     // start sync: wait until startAt, but mark rolling immediately so UI won't reveal targets/face early
     uiDiceRolling = true;
+    // Hide move previews until the dice animation has fully finished
+    renderPieces();
     renderTargets();
     renderDiceOverlay();
 
     const st = startAt ?? Date.now();
+    uiRollLockUntil = Math.max(uiRollLockUntil, st + durationMs);
     const wait = st - Date.now();
     if (wait > 0) await delay(wait);
 
@@ -801,7 +825,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     await delay(120);
     diceInnerG.classList.remove('diceRolling');
 
-    uiDiceRolling = false;
+    uiDiceRolling = (Date.now() < uiRollLockUntil);
+    renderPieces();
     renderTargets();
     refreshControls();
   }
@@ -852,7 +877,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, startAt, durationMs: ROLL_ANIM_MS } });
 
     // auto-move: even if only one option, wait until roll animation ends
-    if (s.settings.autoMove && s.movablePieceIds.length === 1){
+    if (s.movablePieceIds.length === 1){
       const pickAt = startAt + ROLL_ANIM_MS + 20;
       const wait = pickAt - Date.now();
       if (wait > 0) await delay(wait);
@@ -1759,7 +1784,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         inner.setAttribute('transform', scale === 1 ? '' : `scale(${scale})`);
       }
 
-      const movable = (state.status === 'playing' && state.phase === 'needPick' && isMyTurn() && (state.movablePieceIds||[]).includes(piece.id));
+      const movable = (state.status === 'playing' && state.phase === 'needPick' && !uiDiceRolling && isMyTurn() && (state.movablePieceIds||[]).includes(piece.id));
       g.classList.toggle('movable', movable);
       g.style.opacity = piece.state === 'finished' ? '0.85' : '1';
     }
@@ -1909,6 +1934,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   function renderAll(){
     buildBoardIfNeeded();
     updateViewAngle();
+    // Derived from timestamp lock so roll previews never leak even if a realtime event arrives late
+    uiDiceRolling = (uiRollLockUntil && Date.now() < uiRollLockUntil) ? true : false;
     renderLabels();
     refreshMobileRoomOverlay();
     renderTurn();
