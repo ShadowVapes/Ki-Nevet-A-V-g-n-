@@ -243,7 +243,7 @@ select, input[type="text"]{
 }
 .help{color:rgba(255,255,255,.85); font-size:12px; font-weight:800; opacity:.85}
 .grid2{display:grid; grid-template-columns: 1fr 1fr; gap:10px}
-@media (max-width:520px){ .grid2{grid-template-columns: 1 fr;} }
+@media (max-width:520px){ .grid2{grid-template-columns: 1fr;} }
 
 .check{
   display:flex; gap:10px; align-items:center;
@@ -338,9 +338,29 @@ select, input[type="text"]{
 
 @keyframes shake{
   0%{transform: translate(0,0) rotate(0deg)}
-  25%{transform: translate(.08px,-.06px) rotate(-6deg)}
-  50%{transform: translate(-.06px,.06px) rotate(6deg)}
-  75%{transform: translate(.06px,.08px) rotate(-6deg)}
+  20%{transform: translate(.12px,-.08px) rotate(-3deg)}
+  45%{transform: translate(-.12px,.08px) rotate(3deg)}
+  70%{transform: translate(.10px,.10px) rotate(-2deg)}
   100%{transform: translate(0,0) rotate(0deg)}
 }
-.diceRolling{ animation: shake 120ms linear infinite; }
+.diceRolling{animation:none}
+
+@media (max-width:980px){
+  .layout{grid-template-columns: 1fr;}
+}
+@media (max-width:520px){
+  .layout{padding:12px}
+  .brandtxt .s{display:none}
+}
+
+
+@media (max-width: 768px){
+  #btnRoll, #btnSkip{display:none !important;}
+}
+
+.diceInner.diceRolling{animation:none}
+
+/* Mobile: ne mutassa a backup/pass gombokat */
+@media (max-width: 768px){
+  #btnRoll, #btnSkip{display:none !important;}
+}
