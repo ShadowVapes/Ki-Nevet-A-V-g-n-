@@ -3,8 +3,8 @@
 // Megjegyzés: a demo működéshez a legegyszerűbb RLS-t kikapcsolni (README-ben leírom),
 // vagy használd a mellékelt policy-kat.
 
-const SUPABASE_URL = "https://YOUR_PROJECT.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_PUBLIC_ANON_KEY";
+const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
+const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
 window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   realtime: { params: { eventsPerSecond: 10 } }
