@@ -1,6 +1,6 @@
 // Supabase inicializálás - IDE ÍRD BE A SAJÁT ADATAIDAT!
-const SUPABASE_URL = 'https://your-project.supabase.co';  // CSAK EZT KELL MÓDOSÍTANI
-const SUPABASE_ANON_KEY = 'your-anon-key';  // CSAK EZT KELL MÓDOSÍTANI
+const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
+const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
