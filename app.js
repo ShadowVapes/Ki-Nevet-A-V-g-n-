@@ -4,8 +4,8 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -218,68 +218,50 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // =======================
   // VIEW (fixed per player)
   // =======================
-  function isMobile(){
-    return !!(window.matchMedia && window.matchMedia('(max-width: 720px)').matches);
-  }
+// VIEW (fixed orientation for everyone)
+// =======================
+// A játék logikája a rács-koordinátákra épül, ezért a megjelenítést
+// egységesen forgatjuk (mindenkinél ugyanaz), hogy a színek és a bábuk
+// minden kliensen ugyanott legyenek (hostnál is, telón is).
+//
+// A felhasználó által elvárt alapnézet:
+//   KÉK bal-fent, ZÖLD jobb-fent, SÁRGA jobb-lent, PIROS bal-lent
+// Ez a jelenlegi rácshoz képest egy fix -90° (CW 270°) forgatás.
 
-  function myColorId(){
-    // Everyone should see their *own* color in the bottom-left.
-    // In online rooms we already know our assigned color (room.myColor)
-    // even before our player row is present in the room state.
-    if (OFFLINE){
-      return room.myColor || state?.players?.[0]?.colorId || 'blue';
-    }
-    if (room.myColor) return room.myColor;
-    const me = state?.players?.find(p => p.id === room.meId);
-    return me?.colorId || null;
-  }
+function isMobile(){
+  return !!(window.matchMedia && window.matchMedia('(max-width: 720px)').matches);
+}
 
-  function angleForColor(colorId){
-    // Goal: everyone sees their OWN color in the bottom-left corner.
-    // Default board corners: green=top-left, yellow=top-right, red=bottom-right, blue=bottom-left.
-    // To bring each color's home-corner to bottom-left we rotate the board CLOCKWISE (SVG y-down):
-    // blue (already bottom-left) -> 0°
-    // green (top-left -> bottom-left) -> 90°
-    // yellow (top-right -> bottom-left) -> 180°
-    // red (bottom-right -> bottom-left) -> 270°
-    switch(colorId){
-      case 'blue': return 0;
-      case 'green': return 90;
-      case 'yellow': return 180;
-      case 'red': return 270;
-      default: return 0;
-    }
-  }
+const FIXED_VIEW_ANGLE_DEG = 270; // egységes mindenkinek
 
-  function rotatePointCW(p, deg){
-    const a = (deg * Math.PI) / 180;
-    const cx = 7.5, cy = 7.5;
-    const x = p.x - cx;
-    const y = p.y - cy;
-    const cos = Math.cos(a), sin = Math.sin(a);
-    const xr = x*cos + y*sin;
-    const yr = -x*sin + y*cos;
-    return { x: xr + cx, y: yr + cy };
-  }
+function rotatePointCW(p, deg){
+  const a = (deg * Math.PI) / 180;
+  const cx = 7.5, cy = 7.5;
+  const x = p.x - cx;
+  const y = p.y - cy;
+  const cos = Math.cos(a), sin = Math.sin(a);
+  // SVG-ben +deg vizuálisan óramutató járásával megegyező irányba fordít.
+  const xr = x*cos + y*sin;
+  const yr = -x*sin + y*cos;
+  return { x: xr + cx, y: yr + cy };
+}
 
-  function mapPos(p){
-    return rotatePointCW(p, viewAngleDeg);
-  }
+function mapPos(p){
+  return rotatePointCW(p, viewAngleDeg);
+}
 
-  function updateViewAngle(){
-    const a = angleForColor(myColorId());
-    if (a !== viewAngleDeg){
-      viewAngleDeg = a;
-      if (gBoard) gBoard.setAttribute('transform', `rotate(${viewAngleDeg} 7.5 7.5)`);
-    }
+function updateViewAngle(){
+  const a = FIXED_VIEW_ANGLE_DEG;
+  if (a !== viewAngleDeg){
+    viewAngleDeg = a;
+    if (gBoard) gBoard.setAttribute('transform', `rotate(${viewAngleDeg} 7.5 7.5)`);
   }
+}
 
-  function refreshMobileRoomOverlay(){
-    if (!mobileRoomOverlay || !mobileRoomCodeText) return;
-    const show = isMobile() && !!room.code && !!state && room.meId && state.hostId && room.meId === state.hostId;
-    mobileRoomOverlay.hidden = !show;
-    if (show) mobileRoomCodeText.textContent = room.code;
-  }
+function refreshMobileRoomOverlay(){
+  // mobil overlay-t nem használunk (a layout marad egységes)
+  if (mobileRoomOverlay) mobileRoomOverlay.hidden = true;
+}
 
 
   // SVG
