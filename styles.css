@@ -292,11 +292,11 @@ select, input[type="text"]{
 }
 
 @keyframes hop{
-  0%{transform: translateY(0) scale(1)}
-  45%{transform: translateY(-2px) scale(1.04)}
-  100%{transform: translateY(0) scale(1)}
+  0%{transform: translateY(0)}
+  40%{transform: translateY(-.18px)}
+  100%{transform: translateY(0)}
 }
-.pawnVisual.hop { animation: hop 180ms ease-out 1; transform-box: fill-box; transform-origin: center; }
+.pawn.hop { animation: hop 120ms ease-out 1; }
 
 /* Target preview markers */
 .target{
@@ -316,6 +316,7 @@ select, input[type="text"]{
 .diceRoot{cursor:pointer}
 .diceBox{
   fill: #ffffff;
+  stroke: rgba(0,0,0,.35);
   stroke-width:.18;
 }
 .diceFaceText{
@@ -464,16 +465,3 @@ select, input[type="text"]{
     display: flex;
   }
 }
-
-
-/* Panel mini header (topbar nélkül) */
-.panelTop{margin-bottom:10px}
-.brandmini{display:flex; align-items:center; gap:8px; font-weight:1000; color: rgba(255,255,255,.92)}
-.brandmini .logo{font-size:18px; line-height:1}
-.brandmini .txt{font-size:14px; letter-spacing:.02em}
-
-
-/* Winner overlay text */
-.winBig{display:block; font-size:22px; font-weight:1000; letter-spacing:.02em; text-align:center}
-.winBig .winName{display:inline-block; padding:6px 10px; border-radius:12px; background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14)}
-#winText{margin:0; padding:6px 0}

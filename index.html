@@ -8,6 +8,21 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎲</span>
+      <div class="brandtxt">
+        <div class="t">Ki nevet a végén</div>
+        <div class="s">online szobás • 2–4 játékos • teló/gép</div>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn ghost" id="btnRules" type="button">Szabályok</button>
+      <button class="btn ghost" id="btnLeave" type="button" disabled>Kilépés</button>
+    </div>
+  </header>
+
   <!-- Mobile: only host sees room code -->
   <div id="mobileRoomOverlay" class="mobile-room" hidden>
     <div class="roompill">
@@ -27,11 +42,6 @@
     </section>
 
     <section class="panel" aria-label="Vezérlőpanel">
-      <div class="row panelTop">
-        <div class="brandmini"><span class="logo">🎲</span><span class="txt">Ki nevet a végén</span></div>
-        <button class="btn ghost" id="btnLeave" type="button" disabled>Kilépés</button>
-      </div>
-
       <div class="status">
         <div class="pill">
           <span class="pill-dot" id="turnDot" aria-hidden="true"></span>
@@ -134,6 +144,27 @@
 
       <div class="modal-footnote">
         <span class="muted2">Supabase (Realtime + DB) • GitHub Pages frontend</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rules modal -->
+  <div class="modal" id="rulesModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+      <div class="modal-head">
+        <div class="modal-title" id="rulesTitle">Szabályok</div>
+        <button class="btn ghost icon" id="btnCloseRules" type="button" aria-label="Bezárás">✕</button>
+      </div>
+      <div class="modal-body prose">
+        <ul>
+          <li>2–4 játékos. Join ugyanazzal a kóddal.</li>
+          <li>Dobás: kockára katt, vagy “Dobás” gomb (backup).</li>
+          <li>6-os kell a bábu kihozásához.</li>
+          <li>Dobás után megmutatja, hova érkezne a bábu (céljelölők).</li>
+          <li>Ütés: ha nem védett mezőn áll az ellenfél, haza megy.</li>
+          <li>Védett: start mezők + a saját színű “színes track” szegmens.</li>
+          <li>Hazafelé: előbb elmegy a bejáratig, utána megy be a színes sorba (nem vág le).</li>
+        </ul>
       </div>
     </div>
   </div>

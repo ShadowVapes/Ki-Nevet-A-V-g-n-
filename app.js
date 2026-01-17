@@ -4,8 +4,8 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -72,9 +72,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     [8,5],[8,4],[8,3],[8,2],[8,1],[8,0],
     [7,0],
   ];
-  // FIX: a haladási irány fordítva kellett
-  PATH.reverse();
-
   const PATH_SET = new Set(PATH.map(p => cellKey(p[0],p[1])));
 
   const COLORS = [
@@ -104,26 +101,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     COLORS.map(c => [c.id, PATH.findIndex(p => p[0]===c.startCoord[0] && p[1]===c.startCoord[1])])
   );
 
-  // Entry = az a track mező, ahonnan 1 lépéssel be tudsz menni a homeStretch[0]-ra
-  const HOME_ENTRY_INDEX = (() => {
-    const out = {};
-    for (const c of COLORS){
-      const [hx, hy] = c.homeStretch[0];
-      const neigh = [
-        [hx-1, hy],
-        [hx+1, hy],
-        [hx, hy-1],
-        [hx, hy+1],
-      ];
-      let entry = null;
-      for (const [nx, ny] of neigh){
-        if (PATH_SET.has(cellKey(nx, ny))){ entry = [nx, ny]; break; }
-      }
-      const idx = entry ? PATH.findIndex(p => p[0]===entry[0] && p[1]===entry[1]) : -1;
-      out[c.id] = idx >= 0 ? idx : (START_INDEX[c.id] + PATH.length - 1) % PATH.length;
-    }
-    return out;
-  })();
+  // Entry = a start előtti mező a tracken (innen lépsz be a homeStretch[0]-ra)
+  const HOME_ENTRY_INDEX = Object.fromEntries(
+    Object.keys(START_INDEX).map(id => [id, (START_INDEX[id] + PATH.length - 1) % PATH.length])
+  );
 
   // Safe: start mezők (mindenkinek safe)
   const SAFE_START_CELLS = new Set(Object.values(START_INDEX).map(i => cellKey(PATH[i][0], PATH[i][1])));
@@ -233,7 +214,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   // polling fallback
   let pollTimer = null;
-  let realtimeSubbed = false;
 
   // =======================
   // VIEW (fixed per player)
@@ -277,9 +257,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const x = p.x - cx;
     const y = p.y - cy;
     const cos = Math.cos(a), sin = Math.sin(a);
-    // Match SVG rotate() direction (positive degrees rotate clockwise in SVG because Y axis points down)
-    const xr = x*cos - y*sin;
-    const yr = x*sin + y*cos;
+    const xr = x*cos + y*sin;
+    const yr = -x*sin + y*cos;
     return { x: xr + cx, y: yr + cy };
   }
 
@@ -393,11 +372,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     });
 
     await ch.subscribe((status) => {
-      realtimeSubbed = (status === 'SUBSCRIBED');
-      setNet(status, realtimeSubbed ? 'var(--green)' : 'var(--muted)');
-      // polling csak fallback (ha realtime nem ok)
-      if (realtimeSubbed) stopPolling();
-      else startPolling();
+      setNet(status, status === "SUBSCRIBED" ? "var(--green)" : "var(--muted)");
     });
 
     room.channel = ch;
@@ -410,7 +385,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   function startPolling(){
     if (pollTimer) return;
-    if (realtimeSubbed) return;
     pollTimer = setInterval(async () => {
       if (!room.code) return;
       if (animLock) return;
@@ -418,7 +392,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         const rr = await fetchRoom(room.code);
         if (rr && rr.version > version) onRemoteSnapshot(rr.state, rr.version);
       }catch{}
-    }, 2000);
+    }, 1100);
   }
 
   function stopPolling(){
@@ -480,7 +454,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     if (payload?.die){
       diceRollAnim(payload.die, payload.startAt ?? null, payload.durationMs ?? ROLL_ANIM_MS);
     }
-    // nincs dobás-log (csak animáció)
+    if (payload?.byName && payload?.die){
+      toast(`${payload.byName} dobott: ${payload.die}`);
+    }
   }
 
   async function pushState(newState, extras){
@@ -609,7 +585,15 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   }
 
   function isTrackLandingAllowed(s, colorId, coord){
-    // Kérés: bármennyi bábu stackelődhessen egy mezőn (nincs 'fal' / blokkolás)
+    const occ = getTrackOccupancy(s);
+    const key = cellKey(coord[0], coord[1]);
+    const bucket = occ.get(key);
+    if (!bucket) return true;
+
+    // 2 azonos bábu blokkol
+    for (const [pid, cnt] of bucket.countByPlayer.entries()){
+      if (pid !== colorId && cnt >= 2) return false;
+    }
     return true;
   }
 
@@ -750,7 +734,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       }
     }
 
-    if (s.log.length > 30) s.log.length = 30;
+    if (s.log.length > 80) s.log.length = 80;
     return s;
   }
 
@@ -868,6 +852,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
     // lastRoll megmarad
     s.lastRoll = { byId: cp.id, byName: cp.name, colorId: cp.colorId, die, at: Date.now() };
+
+    s.log.unshift(`${cp.name} dobott: ${die}.`);
     s.movablePieceIds = updateMovablePieceIds(s);
 
     if (s.movablePieceIds.length === 0){
@@ -889,8 +875,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     }
 
     await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, startAt, durationMs: ROLL_ANIM_MS } });
-    // auto-move: ha csak 1 opció van, automatikusan lép (de csak dobás anim után)
-    if ((s.settings?.autoMove ?? true) && s.movablePieceIds.length === 1){
+
+    // auto-move: even if only one option, wait until roll animation ends
+    if (s.movablePieceIds.length === 1){
       const pickAt = startAt + ROLL_ANIM_MS + 20;
       const wait = pickAt - Date.now();
       if (wait > 0) await delay(wait);
@@ -1621,6 +1608,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     if (gTargets) gTargets.innerHTML = "";
     pawnEls.clear();
   }
+
   function ensurePawnEls(){
     if (!state || !gPieces) return;
 
@@ -1640,13 +1628,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       inner.setAttribute('class','pawnInner');
       g.appendChild(inner);
 
-      // Külön vizuális group: a pozíció (translate) az outer g-n van,
-      // a stack-scale a pawnInner-en, a hop animáció pedig a pawnVisual-on.
-      // Így a hop nem írja felül a pozíció transformot és nincs 0,0 teleport.
-      const visual = document.createElementNS(svg.namespaceURI,'g');
-      visual.setAttribute('class','pawnVisual');
-      inner.appendChild(visual);
-
       const ring = document.createElementNS(svg.namespaceURI,"circle");
       ring.setAttribute("class","ring");
       ring.setAttribute("r","0.48");
@@ -1654,6 +1635,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       ring.setAttribute("stroke-width","0.08");
       ring.setAttribute("fill","rgba(255,255,255,.22)");
 
+      // Pawn (classic-ish): base + body + head (shaded)
       const base = document.createElementNS(svg.namespaceURI,"ellipse");
       base.setAttribute("cx","0");
       base.setAttribute("cy","0.30");
@@ -1681,12 +1663,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       shine.setAttribute("cx","-0.08");
       shine.setAttribute("cy","-0.50");
 
-      visual.appendChild(ring);
-      visual.appendChild(base);
-      visual.appendChild(body);
-      visual.appendChild(head);
-      visual.appendChild(shine);
-
       const hit = document.createElementNS(svg.namespaceURI,"circle");
       hit.setAttribute("class","hit");
       hit.setAttribute("r","0.70");
@@ -1695,6 +1671,12 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         const id = g.dataset.pieceId;
         if (canPick(id)) actPick(id);
       });
+
+      inner.appendChild(ring);
+      inner.appendChild(base);
+      inner.appendChild(body);
+      inner.appendChild(head);
+      inner.appendChild(shine);
       g.appendChild(hit);
 
       gPieces.appendChild(g);
@@ -1762,21 +1744,15 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   function renderPieces(){
     if (!state) return;
 
-    // csoportosítás: ugyanazon mezőn állók kapjanak offsetet (track + célvonal + finish)
-    const groups = new Map();
-    const keyOf = (piece) => {
-      if (piece.state === 'track') return `t:${piece.trackIndex}`;
-      if (piece.state === 'homeStretch') return `hs:${piece.playerId}:${piece.stretchIndex}`;
-      if (piece.state === 'finished') return `fin:${piece.playerId}`;
-      return null;
-    };
-
+    // occupancy on track (stack viz)
+    const occ = new Map();
     for (const piece of state.pieces){
-      const k = keyOf(piece);
-      if (!k) continue;
-      const arr = groups.get(k) || [];
+      if (piece.state !== 'track') continue;
+      const [x,y] = PATH[piece.trackIndex];
+      const k = 't:' + x + ',' + y;
+      const arr = occ.get(k) || [];
       arr.push(piece.id);
-      groups.set(k, arr);
+      occ.set(k, arr);
     }
 
     for (const piece of state.pieces){
@@ -1784,17 +1760,21 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       if (!g) continue;
 
       let pos = pieceToPos(state, piece);
-      let scale = 1;
 
-      const k = keyOf(piece);
-      const arr = k ? (groups.get(k) || []) : [];
-      if (arr.length > 1){
-        scale = 0.82;
-        const idx = arr.indexOf(piece.id);
-        const n = arr.length;
-        const ang = (idx / n) * Math.PI * 2;
-        const r = (piece.state === 'track') ? 0.22 : 0.18;
-        pos = { x: pos.x + Math.cos(ang)*r, y: pos.y + Math.sin(ang)*r };
+      // stack offset + shrink (only on track)
+      let scale = 1;
+      if (piece.state === 'track'){
+        const [x,y] = PATH[piece.trackIndex];
+        const k = 't:' + x + ',' + y;
+        const arr = occ.get(k) || [];
+        if (arr.length > 1){
+          scale = 0.82;
+          const idx = arr.indexOf(piece.id);
+          const n = arr.length;
+          const ang = (idx / n) * Math.PI * 2;
+          const r = 0.22;
+          pos = { x: pos.x + Math.cos(ang)*r, y: pos.y + Math.sin(ang)*r };
+        }
       }
 
       g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
@@ -1869,13 +1849,13 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       setDiceFace("—");
       dicePlayerText.textContent = state?.status === "lobby" ? "Lobby (host start)" : "—";
       diceHintText.textContent = state?.status === "lobby" ? "Katt: Start (host)" : "";
-      diceRect.style.stroke = "rgba(255,255,255,.35)";
+      diceRect.setAttribute("stroke", "rgba(255,255,255,.35)");
       return;
     }
 
     const cp = currentPlayer(state);
     const c = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
-    diceRect.style.stroke = withAlpha(c, 0.95);
+    diceRect.setAttribute("stroke", withAlpha(c, 0.95));
 
     // face: rolling közben ne írjuk felül a flickert
     if (!uiDiceRolling){
@@ -1904,15 +1884,14 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   async function animateMove(anim){
     const g = pawnEls.get(anim.pieceId);
     if (!g) return;
-    const visual = g.querySelector('.pawnVisual') || g;
 
     for (let i=0;i<anim.steps.length;i++){
       const p = anim.steps[i];
       g.setAttribute("transform", `translate(${p.x}, ${p.y})`);
-      // hop (csak a vizuális group-on, különben SVG transform felülírja a pozíciót és 0,0-ra teleportál)
-      visual.classList.remove('hop');
-      try{ void visual.getBBox(); }catch{}
-      visual.classList.add('hop');
+      // hop
+      g.classList.remove("hop");
+      void g.getBBox(); // reflow-ish SVG
+      g.classList.add("hop");
       await delay(i === 0 ? MOVE_STEP_MS_FIRST : MOVE_STEP_MS);
     }
 
@@ -1936,22 +1915,13 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   // =======================
   // MODALS
   // =======================
-  function openRules(){
-    if (!rulesModal) return;
-    rulesModal.classList.add('show');
-    rulesModal.setAttribute('aria-hidden','false');
-  }
-  function closeRules(){
-    if (!rulesModal) return;
-    rulesModal.classList.remove('show');
-    rulesModal.setAttribute('aria-hidden','true');
-  }
+  function openRules(){ rulesModal.classList.add("show"); rulesModal.setAttribute("aria-hidden","false"); }
+  function closeRules(){ rulesModal.classList.remove("show"); rulesModal.setAttribute("aria-hidden","true"); }
 
   function openWin(name){
-    const safe = escapeHtml(name);
-    winText.innerHTML = `<div class="winBig">NYERT: <span class="winName">${safe}</span></div>`;
-    winModal.classList.add('show');
-    winModal.setAttribute('aria-hidden','false');
+    winText.innerHTML = `<b>${escapeHtml(name)}</b> nyert. GG.`;
+    winModal.classList.add("show");
+    winModal.setAttribute("aria-hidden","false");
   }
   function closeWin(){
     winModal.classList.remove("show");
@@ -2007,9 +1977,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   btnCopy.addEventListener("click", copyCode);
   btnCopyBig.addEventListener("click", copyCode);
 
-  if (btnRules) btnRules.addEventListener("click", openRules);
-  if (btnCloseRules) btnCloseRules.addEventListener("click", closeRules);
-  if (rulesModal) rulesModal.addEventListener("pointerdown", (e) => { if (e.target === rulesModal) closeRules(); });
+  btnRules.addEventListener("click", openRules);
+  btnCloseRules.addEventListener("click", closeRules);
+  rulesModal.addEventListener("pointerdown", (e) => { if (e.target === rulesModal) closeRules(); });
 
   btnCloseWin.addEventListener("click", closeWin);
   btnBackLobby.addEventListener("click", () => { closeWin(); openLobby(); });
