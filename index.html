@@ -18,10 +18,17 @@
     </div>
 
     <div class="top-actions">
-      <button class="btn ghost" id="btnRules" type="button">Szabályok</button>
       <button class="btn ghost" id="btnLeave" type="button" disabled>Kilépés</button>
     </div>
   </header>
+
+  <!-- Mobile: only host sees room code -->
+  <div id="mobileRoomOverlay" class="mobile-room" hidden>
+    <div class="roompill">
+      <span class="tag">Kód</span>
+      <span id="mobileRoomCodeText" class="code">—</span>
+    </div>
+  </div>
 
   <main class="layout">
     <section class="board-card" aria-label="Játéktábla">
@@ -150,12 +157,14 @@
       <div class="modal-body prose">
         <ul>
           <li>2–4 játékos. Join ugyanazzal a kóddal.</li>
-          <li>Dobás: kockára katt, vagy “Dobás” gomb (backup).</li>
+          <li>Dobás: kockára katt, vagy "Dobás" gomb (backup).</li>
           <li>6-os kell a bábu kihozásához.</li>
           <li>Dobás után megmutatja, hova érkezne a bábu (céljelölők).</li>
           <li>Ütés: ha nem védett mezőn áll az ellenfél, haza megy.</li>
-          <li>Védett: start mezők + a saját színű “színes track” szegmens.</li>
-          <li>Hazafelé: előbb elmegy a bejáratig, utána megy be a színes sorba (nem vág le).</li>
+          <li>Védett: start mezők + a saját színű "színes track" szegmens.</li>
+          <li>Hazafelé: előbb elmegy a bejáratig, utána megy be a színes sorba.</li>
+          <li>A célvonalon csak pontosan lehet beérni. Túlzott dobás esetén visszapattan.</li>
+          <li>Akárhány bábu állhat egy mezőn (stackelés).</li>
         </ul>
       </div>
     </div>
