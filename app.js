@@ -4,8 +4,8 @@
   // =======================
   // SUPABASE CONFIG
   // =======================
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 
   const sb = (window.supabase && SUPABASE_URL.startsWith("http"))
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -72,6 +72,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     [8,5],[8,4],[8,3],[8,2],[8,1],[8,0],
     [7,0],
   ];
+  // FIX: a haladási irány fordítva kellett
+  PATH.reverse();
+
   const PATH_SET = new Set(PATH.map(p => cellKey(p[0],p[1])));
 
   const COLORS = [
@@ -101,10 +104,26 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     COLORS.map(c => [c.id, PATH.findIndex(p => p[0]===c.startCoord[0] && p[1]===c.startCoord[1])])
   );
 
-  // Entry = a start előtti mező a tracken (innen lépsz be a homeStretch[0]-ra)
-  const HOME_ENTRY_INDEX = Object.fromEntries(
-    Object.keys(START_INDEX).map(id => [id, (START_INDEX[id] + PATH.length - 1) % PATH.length])
-  );
+  // Entry = az a track mező, ahonnan 1 lépéssel be tudsz menni a homeStretch[0]-ra
+  const HOME_ENTRY_INDEX = (() => {
+    const out = {};
+    for (const c of COLORS){
+      const [hx, hy] = c.homeStretch[0];
+      const neigh = [
+        [hx-1, hy],
+        [hx+1, hy],
+        [hx, hy-1],
+        [hx, hy+1],
+      ];
+      let entry = null;
+      for (const [nx, ny] of neigh){
+        if (PATH_SET.has(cellKey(nx, ny))){ entry = [nx, ny]; break; }
+      }
+      const idx = entry ? PATH.findIndex(p => p[0]===entry[0] && p[1]===entry[1]) : -1;
+      out[c.id] = idx >= 0 ? idx : (START_INDEX[c.id] + PATH.length - 1) % PATH.length;
+    }
+    return out;
+  })();
 
   // Safe: start mezők (mindenkinek safe)
   const SAFE_START_CELLS = new Set(Object.values(START_INDEX).map(i => cellKey(PATH[i][0], PATH[i][1])));
@@ -181,6 +200,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   const mobileRoomOverlay = $("#mobileRoomOverlay");
   const mobileRoomCodeText = $("#mobileRoomCodeText");
 
+  const btnRules = $("#btnRules");
   const btnCloseRules = $("#btnCloseRules");
   const rulesModal = $("#rulesModal");
 
@@ -213,6 +233,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   // polling fallback
   let pollTimer = null;
+  let realtimeSubbed = false;
 
   // =======================
   // VIEW (fixed per player)
@@ -256,8 +277,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const x = p.x - cx;
     const y = p.y - cy;
     const cos = Math.cos(a), sin = Math.sin(a);
-    const xr = x*cos + y*sin;
-    const yr = -x*sin + y*cos;
+    // Match SVG rotate() direction (positive degrees rotate clockwise in SVG because Y axis points down)
+    const xr = x*cos - y*sin;
+    const yr = x*sin + y*cos;
     return { x: xr + cx, y: yr + cy };
   }
 
@@ -291,11 +313,11 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   let uiDiceRolling = false;
   let uiRollLockUntil = 0; // timestamp: while > now, do not reveal movable pieces/targets
 
-  const ROLL_ANIM_MS = 800;
-  const ROLL_SYNC_BUFFER_MS = 180;
-  const MOVE_STEP_MS_FIRST = 120;
-  const MOVE_STEP_MS = 180;
-  const POST_MOVE_PAUSE_MS = 800;
+  const ROLL_ANIM_MS = 1000;
+  const ROLL_SYNC_BUFFER_MS = 220;
+  const MOVE_STEP_MS_FIRST = 140;
+  const MOVE_STEP_MS = 220;
+  const POST_MOVE_PAUSE_MS = 1000;
 
   let diceG = null;
   let diceInnerG = null;
@@ -371,7 +393,11 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     });
 
     await ch.subscribe((status) => {
-      setNet(status, status === "SUBSCRIBED" ? "var(--green)" : "var(--muted)");
+      realtimeSubbed = (status === 'SUBSCRIBED');
+      setNet(status, realtimeSubbed ? 'var(--green)' : 'var(--muted)');
+      // polling csak fallback (ha realtime nem ok)
+      if (realtimeSubbed) stopPolling();
+      else startPolling();
     });
 
     room.channel = ch;
@@ -384,6 +410,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   function startPolling(){
     if (pollTimer) return;
+    if (realtimeSubbed) return;
     pollTimer = setInterval(async () => {
       if (!room.code) return;
       if (animLock) return;
@@ -391,7 +418,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         const rr = await fetchRoom(room.code);
         if (rr && rr.version > version) onRemoteSnapshot(rr.state, rr.version);
       }catch{}
-    }, 2500);
+    }, 2000);
   }
 
   function stopPolling(){
@@ -453,6 +480,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     if (payload?.die){
       diceRollAnim(payload.die, payload.startAt ?? null, payload.durationMs ?? ROLL_ANIM_MS);
     }
+    // nincs dobás-log (csak animáció)
   }
 
   async function pushState(newState, extras){
@@ -511,6 +539,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         const rr = await fetchRoom(room.code);
         if (rr) applySnapshot(rr.state, rr.version);
       } catch {}
+      toast('Ütközés / desync: frissítettem a szobát.');
     }
   }
 
@@ -557,7 +586,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       movablePieceIds: [],
       sixStreak: 0,
       winnerId: null,
-      lastRoll: null,
+      lastRoll: null, // FIX: mindig megmarad, hogy mások is lássák
       log: [`${new Date().toLocaleString()} – Szoba létrehozva.`],
       updatedAt: nowIso()
     };
@@ -580,7 +609,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   }
 
   function isTrackLandingAllowed(s, colorId, coord){
-    // Akárhány bábu stackelődhet egy mezőn
+    // Kérés: bármennyi bábu stackelődhessen egy mezőn (nincs 'fal' / blokkolás)
     return true;
   }
 
@@ -598,33 +627,30 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       return { state:"track", trackIndex:ti, stretchIndex:null };
     }
 
-    // track mozgás - FIX: ellenkező irányba
+    // track mozgás
     if (piece.state === "track"){
       const cur = piece.trackIndex;
       const entry = HOME_ENTRY_INDEX[colorId];
-      // FIX: ellenkező irányba számoljuk a távolságot
-      const distToEntry = (cur - entry + PATH.length) % PATH.length;
-      if (distToEntry < 0) distToEntry += PATH.length;
+      const distToEntry = (entry - cur + PATH.length) % PATH.length;
 
-      // ha még nem éred el az entry-t, sima track (de ellenkező irányba)
+      // ha még nem éred el az entry-t, sima track
       if (die <= distToEntry){
-        const ni = (cur - die + PATH.length) % PATH.length;
+        const ni = (cur + die) % PATH.length;
         if (!isTrackLandingAllowed(s, colorId, PATH[ni])) return null;
         return { state:"track", trackIndex:ni, stretchIndex:null };
       }
 
       // különben entry-ig elmész, majd 1 lépés = homeStretch[0]
-      const into = die - distToEntry - 1;
+      const into = die - distToEntry - 1; // FIX: így biztos entry után lép be
       if (into < 0 || into > 5) return null;
       return { state:"homeStretch", trackIndex:null, stretchIndex:into };
     }
 
-    // homeStretch (bounce: csak pontosan lehet beérni)
+    // homeStretch (bounce: túldobásnál falig, majd vissza)
     if (piece.state === "homeStretch"){
       const raw = piece.stretchIndex + die;
       if (raw == 6) return { state:"finished", trackIndex:null, stretchIndex:null };
       if (raw < 6) return { state:"homeStretch", trackIndex:null, stretchIndex:raw };
-      // túllépés esetén visszapattan
       const over = raw - 6;
       const back = 6 - over;
       return { state:"homeStretch", trackIndex:null, stretchIndex:back };
@@ -694,6 +720,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         const protectedVictims = [];
 
         for (const v of victims){
+          // Spawn protection: csak akkor védett, ha a saját színének START mezőjén áll.
           const spawnIdx = START_INDEX[v.playerId];
           const isSpawnSafe = (spawnIdx !== undefined && v.trackIndex === spawnIdx);
           if (isSpawnSafe) protectedVictims.push(v);
@@ -720,18 +747,10 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       if (pl){
         pl.finished = (pl.finished || 0) + 1;
         s.log.unshift(`${actor.name} beért! (${pl.finished}/4)`);
-        
-        // Ha mind a 4 bábu beért
-        if (pl.finished >= 4) {
-          s.status = "ended";
-          s.phase = "ended";
-          s.winnerId = pl.id;
-          s.log.unshift(`${actor.name} NYERT! GG!`);
-        }
       }
     }
 
-    if (s.log.length > 80) s.log.length = 80;
+    if (s.log.length > 30) s.log.length = 30;
     return s;
   }
 
@@ -783,6 +802,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
   function syncUiRollLockFromState(){
     if (!state || !state.lastRoll) return;
+    // If we received a DB snapshot first (before realtime roll event),
+    // suppress pick/targets for the duration of the roll animation.
     const now = Date.now();
     const at = Number(state.lastRoll.at || 0);
     if (!at) return;
@@ -796,7 +817,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   async function diceRollAnim(finalDie, startAt=null, durationMs=ROLL_ANIM_MS){
     if (!diceInnerG) return;
 
+    // start sync: wait until startAt, but mark rolling immediately so UI won't reveal targets/face early
     uiDiceRolling = true;
+    // Hide move previews until the dice animation has fully finished
     renderPieces();
     renderTargets();
     renderDiceOverlay();
@@ -811,11 +834,11 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const endAt = st + durationMs;
     while (Date.now() < endAt){
       setDiceFace((Math.floor(Math.random()*6) + 1));
-      await delay(60);
+      await delay(70);
     }
 
     setDiceFace(finalDie);
-    await delay(100);
+    await delay(120);
     diceInnerG.classList.remove('diceRolling');
 
     uiDiceRolling = (Date.now() < uiRollLockUntil);
@@ -833,7 +856,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const die = rollDie();
     const startAt = Date.now() + ROLL_SYNC_BUFFER_MS;
 
-    // local: start the roll animation synced
+    // local: start the roll animation synced (others receive the same startAt via broadcast)
     diceRollAnim(die, startAt, ROLL_ANIM_MS);
 
     const s = deepClone(state);
@@ -843,12 +866,12 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     s.phase = 'needPick';
     s.updatedAt = nowIso();
 
+    // lastRoll megmarad
     s.lastRoll = { byId: cp.id, byName: cp.name, colorId: cp.colorId, die, at: Date.now() };
-
-    s.log.unshift(`${cp.name} dobott: ${die}.`);
     s.movablePieceIds = updateMovablePieceIds(s);
 
     if (s.movablePieceIds.length === 0){
+      // No legal move: keep current player's dice color until roll anim ends + 1s, then pass turn
       s.log.unshift(`${cp.name}: nincs lépés.`);
       s.phase = 'pause';
       await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, startAt, durationMs: ROLL_ANIM_MS } });
@@ -857,6 +880,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const wait = until - Date.now();
       if (wait > 0) await delay(wait);
 
+      // Only the current player advances the turn (prevents double-advance)
       if (state && state.status === 'playing' && isMyTurn() && state.phase === 'pause' && state.die === die){
         const s2 = nextTurnInState(state, false);
         await pushState(s2, null);
@@ -865,10 +889,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     }
 
     await pushState(s, { rollAnim:{ die, byName: cp.name, colorId: cp.colorId, startAt, durationMs: ROLL_ANIM_MS } });
-
-    // auto-move: ha csak egy lehetőség van, és autoMove be van kapcsolva
-    if (s.movablePieceIds.length === 1 && ui.autoMove){
-      const pickAt = startAt + ROLL_ANIM_MS + 50;
+    // auto-move: ha csak 1 opció van, automatikusan lép (de csak dobás anim után)
+    if ((s.settings?.autoMove ?? true) && s.movablePieceIds.length === 1){
+      const pickAt = startAt + ROLL_ANIM_MS + 20;
       const wait = pickAt - Date.now();
       if (wait > 0) await delay(wait);
 
@@ -895,17 +918,17 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     else if (piece.state === "track"){
       const cur = piece.trackIndex;
       const entry = HOME_ENTRY_INDEX[colorId];
-      const distToEntry = (cur - entry + PATH.length) % PATH.length;
+      const distToEntry = (entry - cur + PATH.length) % PATH.length;
 
       if (mv.state === "track"){
         for (let i=1;i<=die;i++){
-          const idx = (cur - i + PATH.length) % PATH.length;
+          const idx = (cur + i) % PATH.length;
           steps.push(cxy(PATH[idx]));
         }
       } else if (mv.state === "homeStretch"){
         // FIX: előbb entry-ig megy (distToEntry lépés), aztán homeStretch[0..]
         for (let i=1;i<=distToEntry;i++){
-          const idx = (cur - i + PATH.length) % PATH.length;
+          const idx = (cur + i) % PATH.length;
           steps.push(cxy(PATH[idx]));
         }
         for (let j=0;j<=mv.stretchIndex;j++){
@@ -946,6 +969,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const coord = PATH[landing];
       const key = cellKey(coord[0], coord[1]);
 
+      // start mezők nem globálisan safe-ek; csak a saját színű védett szegmens véd
       const victims = prev.pieces.filter(pp =>
         pp.id !== piece.id &&
         pp.state === "track" &&
@@ -974,23 +998,30 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const anim = buildMoveAnim(state, piece, mv);
     let s2 = applyMoveToState(state, pieceId, mv);
 
-    // Ha vége a játéknak
-    if (s2.status === "ended") {
+    // win?
+    const cpAfter = currentPlayer(s2);
+    const plAfter = s2.players.find(p => p.id === cpAfter.id);
+    if (plAfter && (plAfter.finished || 0) >= 4){
+      s2.status = "ended";
+      s2.phase = "ended";
+      s2.winnerId = cpAfter.id;
+      s2.log.unshift(`${cpAfter.name} nyert!`);
+      s2.updatedAt = nowIso();
       await pushState(s2, { moveAnim: anim });
       return;
     }
 
-    // extra turn: 6-osnál mindig + beérésnél is
+    // extra turn: 6-osnál mindig + beérésnél is (nem stackelődik duplán)
     const finishedThisMove = (mv.state === 'finished');
     const extra = (s2.settings.extraTurnOnSix && state.die === 6) || finishedThisMove;
 
     if (extra){
       if (finishedThisMove && state.die === 6){
-        s2.log.unshift(`${currentPlayer(s2).name} 6-tal beért! +1 dobás.`);
+        s2.log.unshift(`${cpAfter.name} 6-tal beért! +1 dobás.`);
       } else if (finishedThisMove){
-        s2.log.unshift(`${currentPlayer(s2).name} beért! +1 dobás.`);
+        s2.log.unshift(`${cpAfter.name} beért! +1 dobás.`);
       } else {
-        s2.log.unshift(`${currentPlayer(s2).name} 6-os! Még egy dobás.`);
+        s2.log.unshift(`${cpAfter.name} 6-os! Még egy dobás.`);
       }
       s2 = nextTurnInState(s2, true);
     } else {
@@ -1030,10 +1061,12 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     btnJoin.hidden = true;
     btnCreate.hidden = true;
 
+    // only host sees room code (desktop too); on mobile it is shown via overlay
     const isHost2 = (room.meId === state.hostId);
     roomBar.hidden = !isHost2;
     if (isHost2) roomCodeText.textContent = room.code;
 
+    // lobby modal: only host sees code/copy row
     try{
       const row = lobbyState.querySelector('.row');
       if (row) row.style.display = isHost2 ? '' : 'none';
@@ -1080,7 +1113,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const name = meName();
     if (!name) return setHint("Írd be a neved.");
 
-    // OFFLINE mód
+    // OFFLINE mód: helyi lobby (hot-seat), nincs szobakód/join
     if (!sb){
       const count = Number(playerCountSel.value);
       ui.extraTurnOnSix = !!optExtraTurnOnSix.checked;
@@ -1095,6 +1128,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const chosen = selectColors(count);
       room.myColor = chosen[0].id;
 
+      // feltöltjük a játékosokat (hot-seat)
       for (let i=0;i<count;i++){
         const c = chosen[i].id;
         init.players.push({
@@ -1244,8 +1278,13 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
     const s2 = deepClone(state);
 
+    // aktív színek = akik ténylegesen bent vannak
     const activeColors = new Set(s2.players.map(p => p.colorId));
+
+    // csak aktív színek bábui maradnak
     s2.pieces = s2.pieces.filter(pc => activeColors.has(pc.playerId));
+
+    // lock a tényleges létszámra
     s2.settings.playerCount = s2.players.length;
 
     s2.status = "playing";
@@ -1342,7 +1381,8 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     elTurnName.textContent = cp ? cp.name : "—";
     elTurnDot.style.background = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.25)";
     const my = (cp && cp.id === room.meId) ? " (te)" : "";
-    elTurnMeta.textContent = `Kör: ${state.turnIdx+1}/${state.players.length}${my}`;
+    const lr = state.lastRoll ? ` • Utolsó dobás: ${state.lastRoll.byName}=${state.lastRoll.die}` : "";
+    elTurnMeta.textContent = `Kör: ${state.turnIdx+1}/${state.players.length}${my}${lr}`;
   }
 
   function renderLogFromState(){
@@ -1368,11 +1408,13 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     btnStart.hidden = !(isHost && isLobby);
     btnStart.disabled = !(isHost && isLobby && (state?.players?.length || 0) >= 2);
 
+    // roll backup gomb
     elBtnRoll.disabled = !(isPlaying && canRoll());
     elBtnSkip.disabled = !(isPlaying && isMyTurn());
 
     btnLeave.disabled = !room.code;
 
+    // board help szöveg
     if (!state || state.status !== "playing"){
       elBoardHelp.textContent = "A játék a kockán keresztül megy. Lobbyban Startol a host.";
     } else {
@@ -1381,6 +1423,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         : "Várj a körödre…";
     }
 
+    // dice enabled/disabled vizuál
     if (diceG){
       diceG.classList.toggle("diceDisabled", !(isPlaying && (canRoll() || (isMyTurn() && state.phase === "needPick"))));
     }
@@ -1476,10 +1519,11 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     const inRedHome = (x>=9 && y>=9);
     const inCenter = (x>=6 && x<=8 && y>=6 && y<=8);
 
+    // classic: belső fehér 'otthon' 4x4
     const innerGreen = (x>=1 && x<=4 && y>=1 && y<=4);
     const innerYellow = (x>=10 && x<=13 && y>=1 && y<=4);
     const innerBlue = (x>=1 && x<=4 && y>=10 && y<=13);
-    const innerRed = (x>=10 && x<=13 && y>=10 && y>=13);
+    const innerRed = (x>=10 && x<=13 && y>=10 && y<=13);
 
     const k = cellKey(x,y);
     const isPath = PATH_SET.has(k);
@@ -1487,13 +1531,16 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
     if (inCenter) return { fill:centerBg, cls:"center" };
 
+    // home quadrants (solid like classic ludo)
     if (inGreenHome) return { fill: innerGreen ? "#ffffff" : colorHex("green"), cls:"" };
     if (inYellowHome) return { fill: innerYellow ? "#ffffff" : colorHex("yellow"), cls:"" };
     if (inRedHome) return { fill: innerRed ? "#ffffff" : colorHex("red"), cls:"" };
     if (inBlueHome) return { fill: innerBlue ? "#ffffff" : colorHex("blue"), cls:"" };
 
+    // home stretch = solid color lane
     if (hs) return { fill: colorHex(hs.id), cls:"path" };
 
+    // track/path
     if (isPath){
       const owner = startOwnerByCell(k);
       if (owner) return { fill: colorHex(owner), cls:'path start' };
@@ -1506,9 +1553,11 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   function buildCenterDice(){
     diceG = document.createElementNS(svg.namespaceURI,"g");
     diceG.setAttribute("class","diceRoot");
+    // közép környéke
     diceG.setAttribute("transform","translate(7.5 7.05)");
     svg.appendChild(diceG);
 
+    // belső group, hogy a CSS transform ne üsse felül a fenti translate-et
     diceInnerG = document.createElementNS(svg.namespaceURI,"g");
     diceInnerG.setAttribute("class","diceInner");
     diceG.appendChild(diceInnerG);
@@ -1520,6 +1569,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     diceRect.setAttribute("height","1.90");
     diceRect.setAttribute("rx","0.35");
     diceRect.setAttribute("class","diceBox");
+    diceRect.setAttribute("stroke","rgba(0,0,0,.35)");
     diceRect.setAttribute("fill","rgba(255,255,255,.92)");
     diceInnerG.appendChild(diceRect);
 
@@ -1547,6 +1597,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     diceHintText.textContent = "";
     diceInnerG.appendChild(diceHintText);
 
+    // hit area (marad a diceG-n, hogy a katt a helyén maradjon)
     const hit = document.createElementNS(svg.namespaceURI,"rect");
     hit.setAttribute("x","-1.20");
     hit.setAttribute("y","-1.05");
@@ -1570,7 +1621,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     if (gTargets) gTargets.innerHTML = "";
     pawnEls.clear();
   }
-
   function ensurePawnEls(){
     if (!state || !gPieces) return;
 
@@ -1589,6 +1639,13 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const inner = document.createElementNS(svg.namespaceURI,'g');
       inner.setAttribute('class','pawnInner');
       g.appendChild(inner);
+
+      // Külön vizuális group: a pozíció (translate) az outer g-n van,
+      // a stack-scale a pawnInner-en, a hop animáció pedig a pawnVisual-on.
+      // Így a hop nem írja felül a pozíció transformot és nincs 0,0 teleport.
+      const visual = document.createElementNS(svg.namespaceURI,'g');
+      visual.setAttribute('class','pawnVisual');
+      inner.appendChild(visual);
 
       const ring = document.createElementNS(svg.namespaceURI,"circle");
       ring.setAttribute("class","ring");
@@ -1624,6 +1681,12 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       shine.setAttribute("cx","-0.08");
       shine.setAttribute("cy","-0.50");
 
+      visual.appendChild(ring);
+      visual.appendChild(base);
+      visual.appendChild(body);
+      visual.appendChild(head);
+      visual.appendChild(shine);
+
       const hit = document.createElementNS(svg.namespaceURI,"circle");
       hit.setAttribute("class","hit");
       hit.setAttribute("r","0.70");
@@ -1632,12 +1695,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         const id = g.dataset.pieceId;
         if (canPick(id)) actPick(id);
       });
-
-      inner.appendChild(ring);
-      inner.appendChild(base);
-      inner.appendChild(body);
-      inner.appendChild(head);
-      inner.appendChild(shine);
       g.appendChild(hit);
 
       gPieces.appendChild(g);
@@ -1705,14 +1762,21 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   function renderPieces(){
     if (!state) return;
 
-    const occ = new Map();
+    // csoportosítás: ugyanazon mezőn állók kapjanak offsetet (track + célvonal + finish)
+    const groups = new Map();
+    const keyOf = (piece) => {
+      if (piece.state === 'track') return `t:${piece.trackIndex}`;
+      if (piece.state === 'homeStretch') return `hs:${piece.playerId}:${piece.stretchIndex}`;
+      if (piece.state === 'finished') return `fin:${piece.playerId}`;
+      return null;
+    };
+
     for (const piece of state.pieces){
-      if (piece.state !== 'track') continue;
-      const [x,y] = PATH[piece.trackIndex];
-      const k = 't:' + x + ',' + y;
-      const arr = occ.get(k) || [];
+      const k = keyOf(piece);
+      if (!k) continue;
+      const arr = groups.get(k) || [];
       arr.push(piece.id);
-      occ.set(k, arr);
+      groups.set(k, arr);
     }
 
     for (const piece of state.pieces){
@@ -1720,20 +1784,17 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       if (!g) continue;
 
       let pos = pieceToPos(state, piece);
-
       let scale = 1;
-      if (piece.state === 'track'){
-        const [x,y] = PATH[piece.trackIndex];
-        const k = 't:' + x + ',' + y;
-        const arr = occ.get(k) || [];
-        if (arr.length > 1){
-          scale = 0.82;
-          const idx = arr.indexOf(piece.id);
-          const n = arr.length;
-          const ang = (idx / n) * Math.PI * 2;
-          const r = 0.22;
-          pos = { x: pos.x + Math.cos(ang)*r, y: pos.y + Math.sin(ang)*r };
-        }
+
+      const k = keyOf(piece);
+      const arr = k ? (groups.get(k) || []) : [];
+      if (arr.length > 1){
+        scale = 0.82;
+        const idx = arr.indexOf(piece.id);
+        const n = arr.length;
+        const ang = (idx / n) * Math.PI * 2;
+        const r = (piece.state === 'track') ? 0.22 : 0.18;
+        pos = { x: pos.x + Math.cos(ang)*r, y: pos.y + Math.sin(ang)*r };
       }
 
       g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
@@ -1758,6 +1819,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
     if (state.phase !== "needPick") return;
     if (uiDiceRolling) return;
 
+
     const cp = currentPlayer(state);
     const die = state.die;
 
@@ -1768,6 +1830,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       const mv = computeLegalMove(state, piece, die);
       if (!mv) continue;
 
+      // cél pozíció
       const ghost = deepClone(piece);
       ghost.state = mv.state;
       ghost.trackIndex = mv.trackIndex ?? null;
@@ -1806,19 +1869,15 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
       setDiceFace("—");
       dicePlayerText.textContent = state?.status === "lobby" ? "Lobby (host start)" : "—";
       diceHintText.textContent = state?.status === "lobby" ? "Katt: Start (host)" : "";
-      diceRect.setAttribute("stroke", "rgba(255,255,255,.35)");
+      diceRect.style.stroke = "rgba(255,255,255,.35)";
       return;
     }
 
     const cp = currentPlayer(state);
-    let strokeColor = "rgba(255,255,255,.35)";
-    
-    if (cp) {
-      strokeColor = withAlpha(colorHex(cp.colorId), 0.95);
-    }
-    
-    diceRect.setAttribute("stroke", strokeColor);
+    const c = cp ? colorHex(cp.colorId) : "rgba(255,255,255,.35)";
+    diceRect.style.stroke = withAlpha(c, 0.95);
 
+    // face: rolling közben ne írjuk felül a flickert
     if (!uiDiceRolling){
       if (state.die){
         setDiceFace(state.die);
@@ -1845,13 +1904,15 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   async function animateMove(anim){
     const g = pawnEls.get(anim.pieceId);
     if (!g) return;
+    const visual = g.querySelector('.pawnVisual') || g;
 
     for (let i=0;i<anim.steps.length;i++){
       const p = anim.steps[i];
       g.setAttribute("transform", `translate(${p.x}, ${p.y})`);
-      g.classList.remove("hop");
-      void g.getBBox();
-      g.classList.add("hop");
+      // hop (csak a vizuális group-on, különben SVG transform felülírja a pozíciót és 0,0-ra teleportál)
+      visual.classList.remove('hop');
+      try{ void visual.getBBox(); }catch{}
+      visual.classList.add('hop');
       await delay(i === 0 ? MOVE_STEP_MS_FIRST : MOVE_STEP_MS);
     }
 
@@ -1866,20 +1927,31 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
         vg.style.transition = "";
       }
     }
+  
 
+    // +1s szünet a lépés után (követhetőbb körváltás + körszín megtartása)
     await delay(POST_MOVE_PAUSE_MS);
   }
 
   // =======================
   // MODALS
   // =======================
-  function openRules(){ rulesModal.classList.add("show"); rulesModal.setAttribute("aria-hidden","false"); }
-  function closeRules(){ rulesModal.classList.remove("show"); rulesModal.setAttribute("aria-hidden","true"); }
+  function openRules(){
+    if (!rulesModal) return;
+    rulesModal.classList.add('show');
+    rulesModal.setAttribute('aria-hidden','false');
+  }
+  function closeRules(){
+    if (!rulesModal) return;
+    rulesModal.classList.remove('show');
+    rulesModal.setAttribute('aria-hidden','true');
+  }
 
   function openWin(name){
-    winText.innerHTML = `<b>${escapeHtml(name)}</b> nyert. GG.`;
-    winModal.classList.add("show");
-    winModal.setAttribute("aria-hidden","false");
+    const safe = escapeHtml(name);
+    winText.innerHTML = `<div class="winBig">NYERT: <span class="winName">${safe}</span></div>`;
+    winModal.classList.add('show');
+    winModal.setAttribute('aria-hidden','false');
   }
   function closeWin(){
     winModal.classList.remove("show");
@@ -1892,6 +1964,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   function renderAll(){
     buildBoardIfNeeded();
     updateViewAngle();
+    // Derived from timestamp lock so roll previews never leak even if a realtime event arrives late
     uiDiceRolling = (uiRollLockUntil && Date.now() < uiRollLockUntil) ? true : false;
     renderLabels();
     refreshMobileRoomOverlay();
@@ -1934,8 +2007,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
   btnCopy.addEventListener("click", copyCode);
   btnCopyBig.addEventListener("click", copyCode);
 
-  btnCloseRules.addEventListener("click", closeRules);
-  rulesModal.addEventListener("pointerdown", (e) => { if (e.target === rulesModal) closeRules(); });
+  if (btnRules) btnRules.addEventListener("click", openRules);
+  if (btnCloseRules) btnCloseRules.addEventListener("click", closeRules);
+  if (rulesModal) rulesModal.addEventListener("pointerdown", (e) => { if (e.target === rulesModal) closeRules(); });
 
   btnCloseWin.addEventListener("click", closeWin);
   btnBackLobby.addEventListener("click", () => { closeWin(); openLobby(); });
