@@ -3,8 +3,8 @@
 //
 // FONTOS: ha nem irod at ezeket, NEM fog mukodni a szoba letrehozas.
 
-window.SUPABASE_URL = "https://YOUR_PROJECT.supabase.co";
-window.SUPABASE_ANON_KEY = "YOUR_PUBLIC_ANON_KEY";
+window.SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
+window.SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
 
 window.sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
   realtime: { params: { eventsPerSecond: 10 } }
