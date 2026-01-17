@@ -1,11 +1,11 @@
 // 1) Supabase projekt: Project Settings -> API
-// 2) Ide másold be az URL-t és az anon public key-t.
-// Megjegyzés: a demo működéshez a legegyszerűbb RLS-t kikapcsolni (README-ben leírom),
-// vagy használd a mellékelt policy-kat.
+// 2) Ide masold be az URL-t es az anon public key-t.
+//
+// FONTOS: ha nem irod at ezeket, NEM fog mukodni a szoba letrehozas.
 
-const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
-const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-";
+window.SUPABASE_URL = "https://YOUR_PROJECT.supabase.co";
+window.SUPABASE_ANON_KEY = "YOUR_PUBLIC_ANON_KEY";
 
-window.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+window.sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY, {
   realtime: { params: { eventsPerSecond: 10 } }
 });

@@ -1,4 +1,11 @@
 # Ludo Online (Ki nevet a végén) – GitHub Pages + Supabase
+## Ha nem enged szobat letrehozni
+Ez szinte mindig 2 ok miatt van:
+1) Nem irtad at a `supabase.js`-ben a `SUPABASE_URL` es `SUPABASE_ANON_KEY` ertekeket.
+2) RLS tiltja az INSERT-et. Futtasd a `supabase.sql`-t (ebben DEMO-hoz RLS OFF van), vagy csinalj policy-kat.
+
+Tipp: lokalisan ne file://-bol nyisd, hanem Live Server-rel / GitHub Pages-en.
+
 
 Ez egy **teljesen működő online Ludo** alap, a kért szabályokkal:
 - Szoba létrehozás + csatlakozás kóddal

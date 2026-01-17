@@ -1,5 +1,12 @@
 (() => {
   const { toast, normRoomCode, randRoomCode, uid, now, sleep } = Util;
+  // Supabase config check (ha placeholder marad, nem fog menni a szoba letrehozas)
+  if(!window.SUPABASE_URL || window.SUPABASE_URL.includes("YOUR_PROJECT") ||
+     !window.SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY.includes("YOUR_PUBLIC")) {
+    toast("Nincs beallitva a Supabase URL/ANON KEY. Nyisd meg supabase.js-t es ird at.");
+    throw new Error("Supabase not configured");
+  }
+
 
   // DOM
   const overlay = document.getElementById('overlay');
@@ -221,7 +228,7 @@
 
   async function ensureRoom(code){
     const { data, error } = await sb.from('ludo_rooms').select('code,state,version').eq('code', code).maybeSingle();
-    if(error){ toast('Supabase hiba: nem tudtam lekérni a szobát.'); throw error; }
+    if(error){ toast('Supabase hiba (select): ' + (error.message || JSON.stringify(error))); throw error; }
 
     if(!data){
       // create
@@ -239,7 +246,7 @@
       };
 
       const insert = await sb.from('ludo_rooms').insert({ code, state: baseState, version: 1 }).select('code,state,version').single();
-      if(insert.error){ toast('Nem tudtam létrehozni a szobát.'); throw insert.error; }
+      if(insert.error){ toast('Nem tudtam létrehozni a szobát: ' + (insert.error.message || JSON.stringify(insert.error))); throw insert.error; }
       roomRow = insert.data;
     } else {
       roomRow = data;
@@ -294,7 +301,7 @@
 
   async function refreshRoom(){
     const { data, error } = await sb.from('ludo_rooms').select('code,state,version').eq('code', roomCode).single();
-    if(error){ toast('Supabase hiba: nem tudtam frissíteni.'); return; }
+    if(error){ toast('Supabase hiba (refresh): ' + (error.message || JSON.stringify(error))); return; }
     roomRow = data;
     handleDiceAnimation(roomRow.state);
     render();
@@ -304,7 +311,7 @@
     // CAS: version alapján
     for(let attempt=0; attempt<6; attempt++){
       const { data, error } = await sb.from('ludo_rooms').select('code,state,version').eq('code', roomCode).single();
-      if(error){ toast('Supabase hiba.'); return; }
+      if(error){ toast('Supabase hiba: ' + (error.message || JSON.stringify(error))); return; }
 
       const next = structuredClone(data.state);
       const updatedState = await mutator(next);
