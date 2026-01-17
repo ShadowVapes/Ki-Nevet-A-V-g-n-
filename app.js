@@ -1,6 +1,6 @@
 // Supabase inicializálás
-const SUPABASE_URL = prompt('Add meg a Supabase URL-t:') || 'https://your-project.supabase.co';
-const SUPABASE_ANON_KEY = prompt('Add meg a Supabase anon key-et:') || 'your-anon-key';
+const SUPABASE_URL = "https://tisfsoerdufcbusslymn.supabase.co/";
+const SUPABASE_ANON_KEY = "sb_publishable_U8iceA_u25OjEaWjHkeGAw_XD99-Id-"; 
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
